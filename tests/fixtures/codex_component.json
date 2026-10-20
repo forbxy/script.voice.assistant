@@ -1,0 +1,35 @@
+{
+  "version": "0.163.0-ce.1",
+  "label": "Codex 0.163.0 CE",
+  "assets": [
+    {
+      "url": "https://github.com/forbxy/codex-ce/releases/download/ce-v0.163.0-1/codex-ce-0.163.0-1-aarch64-unknown-linux-musl.tar.gz",
+      "filename": "codex-ce-0.163.0-1-aarch64-unknown-linux-musl.tar.gz",
+      "format": "tar",
+      "sha256": "e49a28f3d62f2becc02083bfc7585b9fc426cd92ad304f9f67a5b3edecf08f18",
+      "md5": "77823746d5f56a05979908a2e39e80ff",
+      "bytes": 116178052,
+      "expanded_bytes": 289464685,
+      "files": {
+        "CE-README.md": "CE-README.md",
+        "LICENSE": "LICENSE",
+        "NOTICE": "NOTICE",
+        "build-info.json": "build-info.json",
+        "codex-app-server": "codex-app-server",
+        "codex-code-mode-host": "codex-code-mode-host",
+        "codex-resources/bwrap": "codex-resources/bwrap",
+        "licenses/bwrap-COPYING": "licenses/bwrap-COPYING"
+      },
+      "executables": [
+        "codex-app-server",
+        "codex-code-mode-host",
+        "codex-resources/bwrap"
+      ]
+    }
+  ],
+  "required": [
+    "codex-app-server",
+    "codex-code-mode-host",
+    "codex-resources/bwrap"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "version": "2.168.2",
+  "label": "CodeBuddy 国际版 2.168.2",
+  "assets": [
+    {
+      "url": "https://acc-1258344699.cos.accelerate.myqcloud.com/@tencent-ai/codebuddy-code/releases/download/2.168.2/codebuddy-code-headless_Linux_arm64.tar.gz",
+      "filename": "codebuddy-code-headless_Linux_arm64.tar.gz",
+      "format": "tar",
+      "sha256": "db06699860e90438061b6bf7e38c1c640392266c0ea3d63cbda3367122d33137",
+      "md5": "24e7a7eb6ac7867c4b0bc389df5e2ae6",
+      "bytes": 60862259,
+      "expanded_bytes": 149841576,
+      "files": {
+        "CHANGELOG.md": "CHANGELOG.md",
+        "LICENSE.txt": "LICENSE.txt",
+        "README.md": "README.md",
+        "codebuddy-headless": "codebuddy-headless"
+      },
+      "executables": [
+        "codebuddy-headless"
+      ]
+    }
+  ],
+  "required": [
+    "codebuddy-headless",
+    "LICENSE.txt"
+  ]
+}

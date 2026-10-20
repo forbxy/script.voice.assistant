@@ -1,0 +1,18 @@
+{
+  "source": {
+    "url": "https://github.com/k2-fsa/sherpa-ncnn/archive/refs/tags/v2.1.15.tar.gz",
+    "sha256": "f4bb8bdd3cea20049cff97aa90dec1cee048b7fdac9a92464ca64df7efe5f27b"
+  },
+  "model": {
+    "url": "https://github.com/k2-fsa/sherpa-ncnn/releases/download/models/sherpa-ncnn-streaming-zipformer-zh-14M-2023-02-23.tar.bz2",
+    "sha256": "b12f7af0ee53b9ec7089579349b8536d03ec0b4a0e1f4d8ea26be14c395e597f"
+  },
+  "compiler_flags": "-mcpu=cortex-a53 -mfpu=neon-fp-armv8 -mfloat-abi=hard -mfp16-format=ieee",
+  "patches": [],
+  "compiler": "armv8a-libreelec-linux-gnueabihf-g++-14.2.0 (GCC) 14.2.0",
+  "shared_libraries": {
+    "libncnn.so": "2ee2b5100e80cecea4a483de29433f466e879f4a25953e4ed88c81236aa6b5c5",
+    "libsherpa-ncnn-c-api.so": "138ccedd817e405c277e1cebf26b814e292f5ea7e7b0ce296a5c105b4ba33960"
+  },
+  "notes": "ARMv8 NEON baseline runs on Cortex-A55; Cortex-A53 target avoids GCC 14 ARM32 fp16 intrinsic compilation errors. No Vulkan/OpenMP dependency."
+}

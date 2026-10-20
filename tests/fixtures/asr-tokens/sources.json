@@ -1,0 +1,34 @@
+{
+  "bilingual.txt": {
+    "sha256": "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3",
+    "bytes": 56317,
+    "models": [
+      "sherpa-ncnn-streaming-zipformer-small-bilingual-zh-en-2023-02-16",
+      "sherpa-ncnn-streaming-zipformer-bilingual-zh-en-2023-02-13"
+    ],
+    "sources": [
+      {
+        "url": "https://huggingface.co/csukuangfj/sherpa-ncnn-streaming-zipformer-small-bilingual-zh-en-2023-02-16/resolve/5fb2fb06fe78a776dbda78226c42d435359064f7/tokens.txt",
+        "sha256": "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3",
+        "bytes": 56317
+      },
+      {
+        "url": "https://huggingface.co/csukuangfj/sherpa-ncnn-streaming-zipformer-bilingual-zh-en-2023-02-13/resolve/05945efc40afe4b572542f01104ca5c413a9f6e1/tokens.txt",
+        "sha256": "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3",
+        "bytes": 56317
+      }
+    ]
+  },
+  "chinese-14m.txt": {
+    "sha256": "8b294db9045d6e5f94647f4c1eec1af4da143a75053c399611444b378ff966ac",
+    "bytes": 48697,
+    "models": [
+      "sherpa-ncnn-streaming-zipformer-zh-14M-2023-02-23"
+    ],
+    "sources": [],
+    "source_archive": {
+      "url": "https://github.com/k2-fsa/sherpa-ncnn/releases/download/models/sherpa-ncnn-streaming-zipformer-zh-14M-2023-02-23.tar.bz2",
+      "sha256": "b12f7af0ee53b9ec7089579349b8536d03ec0b4a0e1f4d8ea26be14c395e597f"
+    }
+  }
+}
