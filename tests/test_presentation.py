@@ -41,3 +41,52 @@ def test_ordinary_json_examples_and_incomplete_output_stay_text(reply):
 
 def test_exact_message_only_reply_is_still_supported():
     assert parse('{"message":"你好"}', KodiTools(lambda *args: None))['message'] == '你好'
+
+
+@pytest.mark.parametrize('metadata,expected', [
+    ({'kind': 'movie'}, '同名作品（2020） · 电影 · 本地媒体库'),
+    ({'kind': 'tvshow'}, '同名作品（2020） · 电视剧 · 本地媒体库'),
+    ({'kind': 'emby', 'media_type': 'movie', 'server_name': 'Emby'},
+     '同名作品（2020） · 电影 · Emby · Emby'),
+    ({'kind': 'emby', 'media_type': 'tvshow', 'server_name': ' emby '},
+     '同名作品（2020） · 电视剧 · Emby · emby'),
+    ({'kind': 'emby', 'media_type': 'movie', 'server_name': ''},
+     '同名作品（2020） · 电影 · Emby · Emby'),
+    ({'kind': 'emby', 'media_type': 'tvshow', 'server_name': '测试服'},
+     '同名作品（2020） · 电视剧 · Emby · 测试服'),
+    ({'kind': 'juku', 'media_type': 'movie', '_juku_source': 'private'},
+     '同名作品（2020） · 电影 · 巨库私有库'),
+    ({'kind': 'juku', 'media_type': 'tvshow', '_juku_source': 'online'},
+     '同名作品（2020） · 电视剧 · 巨库在线目录'),
+    ({'kind': 'juku', 'media_type': '', '_juku_source': 'online'},
+     '同名作品（2020） · 影视（类型未知） · 巨库在线目录'),
+    ({'kind': 'episode', 'showtitle': '测试剧', 'season': 1, 'episode': 3},
+     '测试剧 第1季第3集：同名作品 · 电视剧 · 本地媒体库'),
+    ({'kind': 'emby', 'media_type': 'episode', 'showtitle': '测试剧', 'season': 2, 'episode': 4,
+      'server_name': 'Emby'}, '测试剧 第2季第4集：同名作品 · 电视剧 · Emby · Emby'),
+    ({'kind': 'channel'}, '同名作品（2020） · 直播频道'),
+])
+@pytest.mark.parametrize('explicit', [True, False])
+def test_media_cards_identify_verified_type_and_source_for_model_and_local_results(metadata, expected, explicit):
+    media = dict(metadata, id=1, title='同名作品', year=2020, thumbnail='poster.jpg')
+    original = dict(media)
+    tools = KodiTools(lambda *args: pytest.fail('Displaying choices must not perform I/O'), media=[media])
+    tools.latest_matches = [media]
+    # Labels and metadata supplied by a model or an older local formatter are
+    # replaced using the remembered candidate; playback intent stays untouched.
+    choices = [{'kind': media['kind'], 'id': 1, 'label': '错误标签 · Emby · Emby', 'value': '继续播放',
+                'media_type': 'wrong', 'server_name': 'wrong'}] if explicit else []
+    reply = json.dumps({'message': '请选择', 'choices': choices})
+    shown = parse(reply, tools)['choices'][0]
+    assert shown['label'] == expected
+    assert shown['kind'] == media['kind'] and shown['id'] == 1 and shown['thumbnail'] == 'poster.jpg'
+    if explicit:
+        assert shown['value'] == '继续播放'
+    assert media == original
+
+
+def test_non_media_action_labels_remain_unchanged():
+    reply = json.dumps({'message': '请选择', 'choices': [
+        {'kind': 'none', 'id': 0, 'label': '换个关键词', 'value': '重新查询'}]})
+    shown = parse(reply, KodiTools(lambda *args: None))['choices'][0]
+    assert shown == {'label': '换个关键词', 'value': '重新查询'}

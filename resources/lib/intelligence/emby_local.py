@@ -74,16 +74,7 @@ def open_source(selected, item, rpc):
         import xbmcgui
     except ImportError:
         return rpc('Player.Open', {'item': {'file': selected['url']}, 'options': {'resume': False}})
-    entry = xbmcgui.ListItem(label=item['title'], path=selected['url'])
-    # Dynamic Next Gen HEAD replies advertise HLS even for ordinary files.
-    # Match its own ListItem setup: don't let Kodi misclassify this as a playlist.
-    entry.setContentLookup(False)
-    entry.setMimeType(selected['mime_type'])
-    entry.setProperty('mimetype', selected['mime_type'])
-    entry.setProperty('IsPlayable', 'true')
-    info = entry.getVideoInfoTag()
-    info.setMediaType(item['media_type'])
-    info.setTitle(item['title'])
+    entry = list_item(selected, item)
     # Populate the video queue before opening it. Passing a bare ListItem to
     # Player.play can leave an empty/stale playlist after a failed STRM open.
     queue = xbmc.PlayList(1)
@@ -94,12 +85,34 @@ def open_source(selected, item, rpc):
     rpc('Player.Open', {'item': {'playlistid': 1, 'position': 0}})
 
 
-def play(item, actual, resume, rpc, cancelled=lambda: False, wait=time.sleep, clock=time.monotonic, timeout=25):
+def list_item(selected, item):
+    import xbmcgui
+    entry = xbmcgui.ListItem(label=item['title'], path=selected['url'])
+    # Dynamic Next Gen HEAD replies advertise HLS even for ordinary files.
+    # Match its own ListItem setup: don't let Kodi misclassify this as a playlist.
+    entry.setContentLookup(False)
+    entry.setMimeType(selected['mime_type'])
+    entry.setProperty('mimetype', selected['mime_type'])
+    entry.setProperty('IsPlayable', 'true')
+    info = entry.getVideoInfoTag()
+    info.setMediaType(item['media_type'])
+    info.setTitle(item['title'])
+    if 'season' in item:
+        info.setSeason(item['season'])
+        info.setEpisode(item['episode'])
+        info.setTvShowTitle(item['showtitle'])
+    if item.get('thumbnail'):
+        entry.setArt({'thumb': item['thumbnail']})
+    return entry
+
+
+def play(item, actual, resume, rpc, cancelled=lambda: False, wait=time.sleep, clock=time.monotonic, timeout=25,
+         queue=None):
     from .playback_tools import playback_watcher
     from .emby_versions import prepare
     if cancelled():
         raise InterruptedError('已取消，未提交 Emby 播放。')
-    selected = prepare(item, actual, rpc)
+    selected = queue['entries'][queue['position']]['source'] if queue is not None else prepare(item, actual, rpc)
     watcher = playback_watcher()
     before = rpc('Player.GetActivePlayers', {})
     old_files = {}
@@ -107,7 +120,11 @@ def play(item, actual, resume, rpc, cancelled=lambda: False, wait=time.sleep, cl
         if player.get('type') == 'video':
             old_files[player['playerid']] = rpc('Player.GetItem', {
                 'playerid': player['playerid'], 'properties': ['file']}).get('item', {}).get('file')
-    if selected is None:
+    if queue is not None:
+        from .emby_queue import open_queue
+        service_ready(cancelled)
+        open_queue(queue, rpc, cancelled)
+    elif selected is None:
         send(item['_emby_server'], item['_emby_id'], cancelled)
     else:
         if cancelled():
@@ -129,7 +146,8 @@ def play(item, actual, resume, rpc, cancelled=lambda: False, wait=time.sleep, cl
             playerid = player['playerid']
             try:
                 row = rpc('Player.GetItem', {'playerid': playerid, 'properties': ['file']}).get('item', {})
-                if not matches(row, item, actual, selected):
+                expected = selected if selected is not None and selected.get('selection') else None
+                if not matches(row, item, actual, expected):
                     if row.get('file') and row['file'] != old_files.get(playerid):
                         raise Unavailable('当前播放项目已变化，未向其他影片设置播放位置。')
                     continue
@@ -168,8 +186,11 @@ def play(item, actual, resume, rpc, cancelled=lambda: False, wait=time.sleep, cl
                     stable_at = now
                 if now - stable_at >= .4:
                     result = {'status': 'playing', 'playerid': playerid, 'confirmed': True}
-                    if selected is not None:
+                    if selected is not None and selected.get('selection'):
                         result['source_selection'] = selected['selection']
+                    if queue is not None:
+                        result.update(queued_count=len(queue['entries']), playlist_position=queue['position'],
+                                      season=queue['season'])
                     return result
             else:
                 stable_at = None

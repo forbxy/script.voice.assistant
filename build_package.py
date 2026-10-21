@@ -71,6 +71,7 @@ def build():
                   'resources/lib/intelligence/juku_tools.py',
                   'resources/lib/intelligence/emby.py', 'resources/lib/intelligence/emby_client.py',
                   'resources/lib/intelligence/emby_cache.py',
+                  'resources/lib/intelligence/emby_queue.py',
                   'resources/lib/intelligence/emby_playback.py', 'resources/lib/intelligence/emby_tools.py',
                   'resources/lib/intelligence/emby_versions.py',
                   'resources/lib/intelligence/media_order.py',

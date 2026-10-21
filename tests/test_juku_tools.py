@@ -100,6 +100,27 @@ def test_fuzzy_results_with_type_do_not_require_extra_detail_calls(setup):
     assert not any(path.startswith('/api/mv/videos/') and not path.endswith('/search') for path, _ in api.calls)
 
 
+@pytest.mark.parametrize('source', ['private', 'online'])
+@pytest.mark.parametrize('is_tv', [False, True])
+def test_is_tv_filters_agent_search_and_displays_type_without_detail_reads(setup, source, is_tv):
+    tools, api = setup
+    rows = [{'id': 'movie', 'title': '测试作品', 'year': 2020, 'isTv': False},
+            {'id': 'series', 'title': '测试作品', 'year': 2020, 'isTv': True}]
+    if source == 'private':
+        api.private = rows
+    else:
+        api.online = rows
+    kind = 'tvshow' if is_tv else 'movie'
+    result = tools.execute('search_juku', {'query': '测试作品', 'source': source, 'kind': kind})
+    assert result['ok'] and result['complete'] and len(result['matches']) == 1
+    assert result['matches'][0]['media_type'] == kind
+    remembered = tools.media[('juku', result['matches'][0]['id'])]
+    assert remembered['_juku_id'] == ('series' if is_tv else 'movie')
+    shown = parse('{"message":"请选择"}', tools)['choices'][0]
+    assert (' · 电视剧 · ' if is_tv else ' · 电影 · ') in shown['label']
+    assert not any(path.startswith('/api/mv/videos/') and path != '/api/mv/videos/search' for path, _ in api.calls)
+
+
 def test_search_results_become_verified_selectable_cards(setup):
     tools, api = setup
     result = tools.execute('search_juku', {'query': '疾速追杀'})

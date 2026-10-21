@@ -7,7 +7,81 @@ from resources.lib.intelligence.commands import Commands, movie_request
 from resources.lib.intelligence.permissions import Permissions
 from resources.lib.intelligence.presentation import parse
 from resources.lib.intelligence.sessions import Sessions
-from resources.lib.intelligence.command_request import media_request
+from resources.lib.intelligence.command_request import media_request, search_request
+
+
+@pytest.mark.parametrize('phrase,title,kind,year,season', [
+    ('库里有没有黑客帝国', '黑客帝国', 'all', None, None),
+    ('库里面有没有黑客帝国？', '黑客帝国', 'all', None, None),
+    ('库中是否有黑客帝国', '黑客帝国', 'all', None, None),
+    ('看看库里有没有黑客帝国', '黑客帝国', 'all', None, None),
+    ('查一下库里有没有黑客帝国', '黑客帝国', 'all', None, None),
+    ('查查库里有没有黑客帝国', '黑客帝国', 'all', None, None),
+    ('查询库里有没有黑客帝国', '黑客帝国', 'all', None, None),
+    ('库里有黑客帝国吗？', '黑客帝国', 'all', None, None),
+    ('搜索库黑客帝国', '黑客帝国', 'all', None, None),
+    ('搜索库里黑客帝国', '黑客帝国', 'all', None, None),
+    ('搜索库里有没有黑客帝国', '黑客帝国', 'all', None, None),
+    ('从库里搜索黑客帝国', '黑客帝国', 'all', None, None),
+    ('请帮我从库里搜索一下黑客帝国', '黑客帝国', 'all', None, None),
+    ('在媒体库里帮我找一下黑客帝国', '黑客帝国', 'all', None, None),
+    ('影视库里找找黑客帝国', '黑客帝国', 'all', None, None),
+    ('从片库里搜黑客帝国', '黑客帝国', 'all', None, None),
+    ('麻烦你搜索电影库阿拉丁', '阿拉丁', 'movie', None, None),
+    ('电影库里有没有阿拉丁', '阿拉丁', 'movie', None, None),
+    ('搜索电视剧库十八岁的天空', '十八岁的天空', 'tvshow', None, None),
+    ('请帮我看看媒体库里有没有《阿拉丁》（2019）？', '阿拉丁', 'all', 2019, None),
+    ('从库里搜索电影《你好，李焕英》', '你好，李焕英', 'movie', None, None),
+    ('搜索库的士速递', '的士速递', 'all', None, None),
+    ('库里有没有《你好吗》', '你好吗', 'all', None, None),
+    ('从库里搜索百变大咖秀第二季', '百变大咖秀', 'tvshow', None, 2),
+    ('库里有没有第２季《百变大咖秀》', '百变大咖秀', 'tvshow', None, 2),
+])
+def test_library_search_requires_explicit_scope_and_preserves_media_filters(phrase, title, kind, year, season):
+    request = search_request(phrase)
+    assert request['title'] == title and request['kind'] == kind
+    assert request['year'] == year and request.get('season') == season
+    assert request['search_only'] and request['resume']
+
+
+@pytest.mark.parametrize('phrase', [
+    '搜索', '搜索黑客帝国', '搜索最近的新闻', '帮我搜索新闻', '搜一下库克最近的新闻',
+    '搜索数据库优化', '帮我查一下天气', '找找阿拉丁', '查询电影黑客帝国',
+    '搜索库', '搜索库里', '从库里搜索', '在库里找一下', '库里有没有', '库里有吗？',
+    '不要从库里搜索黑客帝国', '如果库里有没有黑客帝国', '我刚才从库里搜索黑客帝国',
+    '从库里搜索《黑客帝国》，然后播放', '从库里搜索黑客帝国然后关机',
+    '搜索电影库电视剧黑客帝国', '搜索库《阿拉丁》（9999）',
+])
+def test_general_or_incomplete_searches_are_not_intercepted(library, phrase):
+    _, calls, tools = library
+    assert search_request(phrase) is None
+    assert Commands(tools).process(phrase) is None
+    assert calls == []
+
+
+def test_unique_library_search_is_selectable_and_only_plays_after_click(library):
+    _, calls, tools = library
+    result = Commands(tools).process('库里有没有黑客帝国')
+    choices = parse(result['reply'], tools)['choices']
+    assert result['model_invocations'] == 0 and len(choices) == 1
+    assert choices[0]['title'] == '黑客帝国' and '电影' in choices[0]['label']
+    assert not tools.acted and not any(method == 'Player.Open' for method, _ in calls)
+    Commands(tools).process('选择', choices[0])
+    assert calls[-1] == ('Player.Open', {'item': {'movieid': 162}, 'options': {'resume': True}})
+
+
+@pytest.mark.parametrize('unavailable', [False, True])
+def test_empty_library_search_returns_local_status_and_clears_old_choices(library, unavailable):
+    _, _, tools = library
+    Commands(tools).process('库里有没有黑客帝国')
+    if unavailable:
+        def fail(*args):raise ValueError('read failed')
+        tools.rpc = fail
+    result = Commands(tools).process('从库里搜索完全无关的片名')
+    shown = parse(result['reply'], tools)
+    assert result['model_invocations'] == 0 and not tools.acted
+    assert shown['choices'] == [] and tools.latest_matches == []
+    assert ('查询不完整' if unavailable else '没有找到') in shown['message']
 
 
 @pytest.mark.parametrize('phrase,season,resume', [
@@ -140,6 +214,7 @@ def test_duplicates_require_selection_and_year_can_disambiguate(library):
     movies.append({'movieid': 200, 'title': '黑客帝国', 'year': 2020})
     result = Commands(tools).process('播放黑客帝国')
     assert [row['id'] for row in parse(result['reply'], tools)['choices']] == [162, 200]
+    assert all(' · 电影 · 本地媒体库' in row['label'] for row in parse(result['reply'], tools)['choices'])
     assert not tools.acted and not any(name == 'Player.Open' for name, _ in calls)
     resumed = Commands(tools).process('继续播放黑客帝国')
     Commands(tools).process('选择', parse(resumed['reply'], tools)['choices'][0])

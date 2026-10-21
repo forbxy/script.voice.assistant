@@ -103,7 +103,7 @@ TOOLS = [
           'season': integer('季号，不填则全部', 0, 1000),
           'offset': integer('分页位置，默认0', 0, 1000000),
           'limit': integer('返回数量，默认20', 1, 30)}, ['id']),
-    spec('play_emby', '播放已查询的 Emby 电影、剧集或续播整部电视剧，由本盒子的 Next Gen 解析播放；不能猜 ID。默认 resume=true，明确要求从头播放才设false。剧集记录不明确会返回 choices，需选择后再播放。status=dispatched只表示已提交，不能声称已经起播；deferred表示仍待释放助手窗口后交接。',
+    spec('play_emby', '播放已查询的 Emby 电影、剧集或续播整部电视剧，由本盒子的 Next Gen 解析播放；不能猜 ID。默认 resume=true，明确要求从头播放才设false。剧集记录不明确会返回 choices，需选择后再播放。选定剧集后将所在整季加入播放列表，从该集起播，不追加其他季。status=dispatched只表示已提交，不能声称已经起播；deferred表示仍待释放助手窗口后交接。',
          {'id': integer('Emby 工具返回的候选 ID', 1, 2147483647),
           'resume': flag('默认true续播，明确从头播放时false')}, ['id']),
 ]

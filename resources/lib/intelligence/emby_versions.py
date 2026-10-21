@@ -112,8 +112,23 @@ def prepare(item, actual, rpc):
     if not isinstance(sources, list) or len(sources) < 2 or not compatible(rpc):
         return None
     index, selection = choose(sources)
-    source = sources[index]
-    encoded = metadata(actual, source).encode('utf-8').hex().upper()
+    return entry(item, actual, [sources[index]], selection)
+
+
+def queued(item, actual, select_version):
+    """Queue normal sources too; the local Next Gen handler still resolves them."""
+    sources = actual.get('MediaSources')
+    if not isinstance(sources, list) or not sources or any(not isinstance(row, dict) for row in sources):
+        raise Unavailable('Emby 剧集缺少可播放的媒体源，未替换播放列表。')
+    if len(sources) > 1 and select_version:
+        index, selection = choose(sources)
+        return entry(item, actual, [sources[index]], selection)
+    return entry(item, actual, sources)
+
+
+def entry(item, actual, sources, selection=None):
+    source = sources[0]
+    encoded = '<>'.join(metadata(actual, row) for row in sources).encode('utf-8').hex().upper()
     path = source.get('Path') or ''
     container = str(source.get('Container') or actual.get('Container') or '').lower()
     if path.split('?', 1)[0].lower().endswith('.iso'):
@@ -129,9 +144,11 @@ def prepare(item, actual, rpc):
     group = 'tvshows' if item['media_type'] == 'episode' else 'movies'
     http = 'http/' if path.lower().startswith(('http://', 'https://')) else ''
     parent = identifier(actual.get('SeriesId') or '0') if group == 'tvshows' else '0'
-    # One source skips the broken selector. Next Gen still initializes its own
-    # playback session, subtitles and markers, and applies its live followhttp setting.
+    # Next Gen still initializes its playback session, subtitles and markers,
+    # and applies its live followhttp setting to these local proxy entries.
     url = ('http://127.0.0.1:57342/dynamic/' + http + group + '/' + identifier(item['_emby_server'])
-           + '/0/' + parent + '/' + identifier(item['_emby_id']) + '/' + media + '-0-0--' + encoded
+           + '/0/' + parent + '/' + identifier(item['_emby_id']) + '/' + media + '-0-0-'
+           + ('m' if len(sources) > 1 else '') + '-' + encoded
            + '/unknown.' + container + '|redirect-limit=1000&failonerror=false')
-    return {'url': url, 'path': path, 'mime_type': MIMES[container], 'selection': selection}
+    return {'url': url, 'path': path if len(sources) == 1 else '',
+            'mime_type': MIMES[container], 'selection': selection}

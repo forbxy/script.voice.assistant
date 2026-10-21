@@ -56,6 +56,28 @@ def test_worker_exception_is_terminal_and_preserves_the_error():
     assert worker.state == 'failed' and worker.error == 'expected failure'
 
 
+@pytest.mark.parametrize('backend', ['off', 'codex', 'codebuddy'])
+def test_empty_explicit_library_search_never_starts_an_agent(monkeypatch, backend):
+    from resources.lib.agent_tools import KodiTools
+    from resources.lib.intelligence import command_media
+    from resources.lib.intelligence.media_results import SearchResult
+    from resources.lib.intelligence.presentation import parse
+    monkeypatch.setattr(command_media, 'search', lambda *args: SearchResult())
+    tools = KodiTools(lambda *args: pytest.fail('Unexpected Kodi call'),
+                      media_search_emby=False, media_search_juku=False)
+    worker = TaskWorker('库里有没有完全无关的片名', {'agent_backend': backend},
+        SimpleNamespace(completed=lambda rows: None), lambda options: tools,
+        lambda *args: pytest.fail('An explicit search must not become an agent playback task'), {}, lambda: False)
+    worker.start()
+    try:
+        assert worker.done.wait(2)
+        assert worker.state == 'completed' and worker.error is None
+        assert worker.outcome['model_invocations'] == 0 and not tools.acted
+        assert parse(worker.outcome['reply'], tools)['choices'] == []
+    finally:
+        worker.cancel();worker.join()
+
+
 def test_resident_client_cancel_callback_does_not_retain_a_finished_task():
     import gc
     import weakref

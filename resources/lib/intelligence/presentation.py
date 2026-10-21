@@ -43,6 +43,27 @@ def structured_reply(reply):
     return None
 
 
+def media_label(media):
+    """Use verified metadata for consistent media cards from every backend."""
+    kind = media['kind']
+    media_type = media.get('media_type') if kind in ('emby', 'juku') else kind
+    title = media['title']
+    if media_type == 'episode' and media.get('showtitle'):
+        title = '{} 第{}季第{}集：{}'.format(media['showtitle'], media.get('season', 0),
+                                           media.get('episode', 0), title)
+    elif media.get('year'):
+        title += '（{}）'.format(media['year'])
+    parts = [title, {'movie': '电影', 'tvshow': '电视剧', 'episode': '电视剧',
+                     'channel': '直播频道'}.get(media_type, '影视（类型未知）')]
+    if kind == 'emby':
+        parts.extend(['Emby', str(media.get('server_name') or 'Emby').strip() or 'Emby'])
+    elif kind == 'juku':
+        parts.append({'private': '巨库私有库', 'online': '巨库在线目录'}.get(media.get('_juku_source'), '巨库'))
+    elif kind in ('movie', 'tvshow', 'episode'):
+        parts.append('本地媒体库')
+    return ' · '.join(parts)
+
+
 def parse(reply, tools):
     value = structured_reply(reply)
     if value is None:
@@ -58,11 +79,12 @@ def parse(reply, tools):
             if not media:
                 continue
             row.update(media)
+            row['label'] = media_label(media)
         choices.append(row)
     if not choices and not tools.acted and getattr(tools, 'latest_matches', None):
         for media in tools.latest_matches[:12]:
             prefix = '播放我选择的直播频道：' if media['kind'] == 'channel' else '播放我选择的这部影视：'
-            choices.append(dict(media, label=media['title'], value=prefix + media['title']))
+            choices.append(dict(media, label=media_label(media), value=prefix + media['title']))
     # Model text and scheduled maintenance cannot decide the window's lifetime.
     # The UI verifies actual full-screen video playback after the turn instead.
     return {'message': value['message'], 'interaction': 'continue', 'choices': choices}

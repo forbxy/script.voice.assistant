@@ -74,8 +74,8 @@ def choose_sources(sources, request, cancelled=lambda: False):
 def resolve(actions, text, request, cancelled, progress):
     local = command_media.search(actions.tools, request, cancelled, progress)
     chosen = local
+    sources = [local]
     if not local.exact and request['kind'] != 'channel' and request.get('allow_fuzzy', True):
-        sources = [local]
         from .media_order import sources as source_order
         for name in source_order(actions.tools):
             source = emby.Source(actions.tools, cancelled) if name == 'emby' else juku.Source(actions.tools, cancelled)
@@ -93,10 +93,16 @@ def resolve(actions, text, request, cancelled, progress):
                 break
         chosen = choose_sources(sources, request, cancelled)
         if not chosen.rows and any(not result.complete for result in sources):
-            progress('部分媒体来源暂时不可用，' + ('继续本地匹配…' if local.rows else '转交智能体处理…'))
+            progress('部分媒体来源暂时不可用，' + ('正在汇总查询结果…' if request.get('search_only') else
+                     '继续本地匹配…' if local.rows else '转交智能体处理…'))
     if cancelled():
         raise InterruptedError('已取消查找。')
     if not chosen.rows:
+        if request.get('search_only'):
+            actions.tools.latest_matches = []
+            message = ('部分媒体来源查询不完整，暂未找到匹配项，请稍后重试。' if any(not row.complete for row in sources) else
+                       '没有找到相近的影视或频道，请换个片名或补充年份。')
+            return actions._outcome(text, message)
         return None
     answer = actions.offer(text, request, chosen, cancelled, progress)
     if answer is None and chosen is not local and local.rows:

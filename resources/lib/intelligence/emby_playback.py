@@ -11,10 +11,11 @@ def verify(client, item):
     return actual
 
 
-def episodes(client, show, actual):
-    values = client.pages({'IncludeItemTypes': 'Episode', 'ParentId': show['_emby_id'], 'Recursive': 'true',
-        'EnableImages': 'true', 'EnableUserData': 'true', 'Fields': 'ProductionYear,UserDataPlayCount,UserDataLastPlayedDate',
-        'SortBy': 'ParentIndexNumber,IndexNumber', 'SortOrder': 'Ascending'}, maximum=10000)
+def episodes(client, show, actual, values=None):
+    if values is None:
+        values = client.pages({'IncludeItemTypes': 'Episode', 'ParentId': show['_emby_id'], 'Recursive': 'true',
+            'EnableImages': 'true', 'EnableUserData': 'true', 'Fields': 'ProductionYear,UserDataPlayCount,UserDataLastPlayedDate',
+            'SortBy': 'ParentIndexNumber,IndexNumber', 'SortOrder': 'Ascending'}, maximum=10000)
     rows, verified_series = [], {show['_emby_id']}
     for value in values:
         if value.get('Type') != 'Episode':
@@ -122,4 +123,8 @@ def dispatch(action, cancelled=lambda: False, rpc=None, wait=None):
             return value['result']
     from .emby_local import play
     options = {'wait': wait} if wait is not None else {}
+    if item['media_type'] == 'episode':
+        from .emby_queue import prepare
+        options['queue'] = prepare(client, item, actual, rpc)
+        client.check()
     return play(item, actual, action['resume'], rpc, cancelled, **options)

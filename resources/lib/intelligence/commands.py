@@ -1,6 +1,6 @@
 """Explicit command rules before an agent; media policy lives in its resolver."""
 import re
-from .command_request import normalize, media_request, movie_request
+from .command_request import normalize, media_request, movie_request, search_request
 from .command_result import outcome
 from .media_actions import MediaActions
 
@@ -21,7 +21,7 @@ class Commands:
         common = common_request(text)
         if common is not None:
             return self._common(text, common, cancelled, progress)
-        request = media_request(text)
+        request = search_request(text) or media_request(text)
         if request is None:
             return None
         from .media_resolver import resolve

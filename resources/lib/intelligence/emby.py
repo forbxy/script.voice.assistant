@@ -1,4 +1,5 @@
 """Optional Emby dynamic titles, projected into the shared media scorer."""
+import re
 import time
 
 from .emby_client import ADDON, Client, Unavailable, accounts, available, identifier
@@ -25,7 +26,8 @@ def candidate(item, account):
 
 def thumbnail(item, account):
     tag = (item.get('ImageTags') or {}).get('Primary')
-    if not isinstance(tag, str) or not tag.isalnum() or len(tag) > 128:
+    # Emby can append a revision timestamp: <image hash>_<ticks>.
+    if not isinstance(tag, str) or not re.fullmatch(r'[A-Za-z0-9_]{1,128}', tag):
         return ''
     # Use Next Gen's local image proxy. Never put an AccessToken in a texture URL.
     return ('http://127.0.0.1:57342/picture/' + identifier(account['ServerId']) + '/p-'

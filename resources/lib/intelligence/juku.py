@@ -98,6 +98,9 @@ def escaped(identifier):
 
 
 def media_type(row):
+    is_tv = row.get('isTv')
+    if type(is_tv) is bool:
+        return 'tvshow' if is_tv else 'movie'
     value = str(row.get('typeId') or row.get('type_id') or '')
     return 'movie' if value == '1' else 'tvshow' if value in ('2', '3', '4', '7') else ''
 
@@ -131,7 +134,7 @@ def private_rows(client, request):
 
 def online_rows(client, request):
     rows, complete = client.pages('/api/mv/videos/search', {'q': request['title'], 'pageSize': 20})
-    # Literal search may omit typeId; newer fuzzy results already provide it.
+    # Older results may omit both isTv and typeId.
     # Verify missing types using bounded detail reads, not title guesses.
     if request['kind'] != 'all':
         verified, reads = [], 0
@@ -181,6 +184,7 @@ def candidates(rows, source):
         # Server score/autoPlay/matchedText are deliberately not scoring input:
         # aliases can refer to another film. Rank the actual selectable title.
         result.append({'kind': 'juku', 'id': identifier, 'title': row['title'], 'year': year(row),
+                       'isTv': row.get('isTv'),
                        'typeId': row.get('typeId') or row.get('type_id'),
                        'pic': artwork(row.get('cover_url') or row.get('pic')),
                        '_library': library, '_juku_source': source})

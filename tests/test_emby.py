@@ -41,6 +41,7 @@ def environment(tmp_path, monkeypatch):
     changed = []
     episodes = [dict(Id=str(30+i), Name='剧集'+str(i), Type='Episode', ProductionYear=2020,
                      ParentIndexNumber=1, IndexNumber=i, SeriesId='20', RunTimeTicks=10000000000,
+                     MediaSources=[dict(Id='source'+str(i), Path='http://media.invalid/'+str(i)+'.mkv')],
                      UserData={'Played': i == 1, 'PlayCount': int(i == 1),
                                'LastPlayedDate': '2026-10-20T10:00:00Z' if i == 1 else ''}) for i in (1, 2, 3)]
     values.update({row['Id']: row for row in episodes})
@@ -72,8 +73,10 @@ def environment(tmp_path, monkeypatch):
                 return {'TotalRecordCount': count, 'Items': copy.deepcopy(catalogue[:min(count, 1)])}
     monkeypatch.setattr(emby, 'Client', Client)
     monkeypatch.setattr(emby, 'available', lambda tools: True)
+    queues = []
     def local_play(item, actual, resume, rpc, cancelled, **options):
         if cancelled():raise InterruptedError('cancelled')
+        if options.get('queue') is not None:queues.append(options['queue'])
         events.append(('local-play', item['_emby_id'],
                        {'StartPositionTicks': (actual.get('UserData') or {}).get('PlaybackPositionTicks', 0) if resume else 0}))
         return {'status': 'playing', 'confirmed': True, 'playerid': 1}
@@ -99,7 +102,7 @@ def environment(tmp_path, monkeypatch):
     tools = KodiTools(rpc, profile=profile, defer_ui=True)
     return SimpleNamespace(profile=profile, config=config, credentials=credentials, account=account, events=events,
                            tools=tools, movie=movie, show=show, values=values, episodes=episodes,
-                           catalogue=catalogue, changed=changed, local=local, Client=Client)
+                           catalogue=catalogue, changed=changed, local=local, Client=Client, queues=queues)
 
 
 def test_shared_phonetic_scoring_and_no_play_until_dialog_handoff(environment):
@@ -116,6 +119,29 @@ def test_shared_phonetic_scoring_and_no_play_until_dialog_handoff(environment):
     assert 'private-test-token' not in json.dumps(result) + json.dumps(e.tools.ui_action)
 
 
+@pytest.mark.parametrize('phrase', ['库里有没有惊天营救', '从库里搜索今天营救'])
+def test_emby_library_search_only_offers_matches_until_selected(environment, phrase):
+    e = environment
+    result = Commands(e.tools).process(phrase)
+    choices = parse(result['reply'], e.tools)['choices']
+    assert len(choices) == 1 and choices[0]['title'] == '惊天营救'
+    assert choices[0]['media_type'] == 'movie' and choices[0]['thumbnail']
+    assert not e.tools.acted and e.tools.ui_action is None
+    assert not result['matching']['automatic'] and result['matching']['target'] is None
+    Commands(e.tools).process('选择', choices[0])
+    assert e.tools.ui_action['emby_play']['_emby_id'] == '11' and e.tools.ui_action['resume']
+
+
+def test_emby_season_library_search_keeps_season_for_the_later_click(environment):
+    e = environment
+    result = Commands(e.tools).process('从库里搜索测试电视剧第一季')
+    choices = parse(result['reply'], e.tools)['choices']
+    assert len(choices) == 1 and choices[0]['media_type'] == 'tvshow'
+    assert choices[0]['_emby_request']['season'] == 1 and e.tools.ui_action is None
+    Commands(e.tools).process('选择', choices[0])
+    assert e.tools.ui_action['emby_play']['_emby_id'] == '32' and e.tools.ui_action['resume']
+
+
 @pytest.mark.parametrize('phrase', ['从头播放惊天营救', '重新播放惊天营救', '把惊天营救从头播放'])
 def test_explicit_restart_does_not_clear_resume(environment, phrase):
     e = environment
@@ -125,15 +151,18 @@ def test_explicit_restart_does_not_clear_resume(environment, phrase):
     assert e.movie['UserData']['PlaybackPositionTicks'] == 1250000000
 
 
-def test_close_candidates_and_versions_remain_selectable_and_have_art(environment):
+@pytest.mark.parametrize('image_tag', ['abc123', 'abc123_639280474299173365'])
+def test_close_candidates_and_versions_remain_selectable_and_have_art(environment, image_tag):
     e = environment
+    e.movie['ImageTags'] = {'Primary': image_tag}
     e.catalogue.append(dict(e.movie, Id='12', ProductionYear=2021))
     e.values['12'] = e.catalogue[-1]
     result = Commands(e.tools).process('播放今天营救')
     assert not result['matching']['automatic'] and not e.tools.acted
     choices = parse(result['reply'], e.tools)['choices']
-    assert len(choices) == 2 and all('Emby' in c['label'] and '测试服' in c['label'] for c in choices)
+    assert len(choices) == 2 and all(' · 电影 · Emby · 测试服' in c['label'] for c in choices)
     assert all(c['thumbnail'].startswith('http://127.0.0.1:57342/picture/') for c in choices)
+    assert all(c['thumbnail'].endswith('-' + image_tag + '--poster.jpg') for c in choices)
     selected = Commands(e.tools).process('选择', selection=choices[0])
     assert '正在通过 Emby' in parse(selected['reply'], e.tools)['message']
 
@@ -184,8 +213,10 @@ def test_series_uses_all_real_history_and_resumes_next_unwatched_episode(environ
     assert e.tools.ui_action['emby_play']['_emby_id'] == '32'
     assert result['model_invocations'] == 0
     e.events.clear()
-    emby_playback.dispatch(e.tools.ui_action)
+    emby_playback.dispatch(e.tools.ui_action, rpc=e.tools.rpc)
     assert e.events[-1][2]['StartPositionTicks'] == 0
+    assert [entry['item']['episode'] for entry in e.queues[-1]['entries']] == [1, 2, 3]
+    assert e.queues[-1]['position'] == 1 and e.queues[-1]['season'] == 1
 
 
 def test_series_saved_position_wins_and_whole_show_restart_uses_first_episode(environment):
@@ -193,7 +224,7 @@ def test_series_saved_position_wins_and_whole_show_restart_uses_first_episode(en
     e.episodes[1]['UserData'] = {'PlaybackPositionTicks': 1200000000, 'LastPlayedDate': '2026-10-20T11:00:00Z'}
     Commands(e.tools).process('播放电视剧测试电视剧')
     assert e.tools.ui_action['emby_play']['_emby_id'] == '32'
-    emby_playback.dispatch(e.tools.ui_action)
+    emby_playback.dispatch(e.tools.ui_action, rpc=e.tools.rpc)
     assert e.events[-1][2]['StartPositionTicks'] == 1200000000
     Commands(e.tools).process('从头播放电视剧测试电视剧')
     assert e.tools.ui_action['emby_play']['_emby_id'] == '31'
@@ -225,7 +256,7 @@ def test_grouped_series_from_another_library_can_resume_or_restart(environment, 
     # One check for the alternate parent covers all its episodes; the already
     # revalidated selected series does not need another metadata request.
     assert e.events.count(('item', '20')) == e.events.count(('item', '21')) == 1
-    emby_playback.dispatch(e.tools.ui_action)
+    emby_playback.dispatch(e.tools.ui_action, rpc=e.tools.rpc)
     assert e.events[-1] == ('local-play', expected, {'StartPositionTicks': 0})
 
 
@@ -283,6 +314,10 @@ def test_explicit_season_only_uses_that_seasons_emby_history(environment, histor
     assert result['model_invocations'] == 0
     assert e.tools.ui_action['emby_play']['_emby_id'] == expected
     assert e.tools.ui_action['resume'] is not restart
+    emby_playback.dispatch(e.tools.ui_action, rpc=e.tools.rpc)
+    assert [entry['item']['_emby_id'] for entry in e.queues[-1]['entries']] == ['41', '42']
+    assert e.queues[-1]['position'] == (1 if expected == '42' else 0)
+    assert e.queues[-1]['season'] == 2
 
 
 def test_missing_emby_season_neither_plays_another_season_nor_reoffers_whole_show(environment):

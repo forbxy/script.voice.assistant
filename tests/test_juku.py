@@ -61,6 +61,48 @@ def install(monkeypatch, api):
     monkeypatch.setattr(juku, 'Client', lambda cancelled=lambda: False: api)
 
 
+@pytest.mark.parametrize('source', ['private', 'online'])
+@pytest.mark.parametrize('is_tv', [False, True])
+@pytest.mark.parametrize('legacy_conflict', [False, True])
+def test_is_tv_survives_ranking_and_controls_choice_type_and_playback_route(monkeypatch, tools, source,
+                                                                         is_tv, legacy_conflict):
+    rows = [{'id': str(i), 'title': TITLE, 'year': 2014 + i, 'isTv': is_tv} for i in (1, 2)]
+    if legacy_conflict:
+        for row in rows:
+            row.update(typeId=1 if is_tv else 2, type_id=1 if is_tv else 2)
+    api = API(**{source: rows})
+    install(monkeypatch, api)
+    outcome = Commands(tools).process('播放' + TITLE)
+    choices = parse(outcome['reply'], tools)['choices']
+    assert len(choices) == 2 and not tools.acted
+    assert all(row['media_type'] == ('tvshow' if is_tv else 'movie') for row in choices)
+    assert all((' · 电视剧 · ' if is_tv else ' · 电影 · ') in row['label'] for row in choices)
+    assert not any(path.startswith('/api/mv/videos/') and path != '/api/mv/videos/search' for path, _ in api.calls)
+    Commands(tools).process('选择', choices[0])
+    params = parse_qs(urlsplit(tools.ui_action.split('"')[1]).query)
+    assert params['is_tv'] == ['1' if is_tv else '0']
+    assert params['type_id'] == ['2' if is_tv else '1']
+    if source == 'private':
+        assert tools.ui_action.startswith('ActivateWindow' if is_tv else 'PlayMedia')
+
+
+@pytest.mark.parametrize('source', ['private', 'online'])
+@pytest.mark.parametrize('phrase', ['库里有没有疾速追杀', '从库里搜索疾速追沙'])
+def test_juku_library_search_only_offers_candidates_until_selected(monkeypatch, tools, source, phrase):
+    api = API(**{source: [dict(id='1', title=TITLE, year=2014, isTv=False)]})
+    install(monkeypatch, api)
+    result = Commands(tools).process(phrase)
+    choices = parse(result['reply'], tools)['choices']
+    assert len(choices) == 1 and choices[0]['title'] == TITLE
+    assert choices[0]['_juku_source'] == source and choices[0]['media_type'] == 'movie'
+    assert not tools.acted and tools.ui_action is None
+    assert not result['matching']['automatic'] and result['matching']['target'] is None
+    assert not any(path.startswith('/api/mv/videos/') and path != '/api/mv/videos/search'
+                   or path.endswith('/links') for path, _ in api.calls)
+    Commands(tools).process('选择', choices[0])
+    assert tools.acted and 'plugin.video.juku' in tools.ui_action
+
+
 def test_explicit_season_uses_juku_resource_picker_instead_of_unverified_single_file(monkeypatch, tools):
     row = {'id': 's1', 'title': '百变大咖秀', 'year': 2012, 'type_id': 2,
            'panList': {'7': [{'url': 'https://115.com/s/example', 'id': 'link'}]}}
@@ -539,7 +581,7 @@ def test_medium_candidates_are_merged_and_sorted_instead_of_local_only(monkeypat
     outcome = Commands(tools).process('播放希望')
     choices = parse(outcome['reply'], tools)['choices']
     assert [row['title'] for row in choices] == ['希望呀', '希望的另一面', '希望与荣耀']
-    assert choices[0]['kind'] == 'juku' and '巨库在线目录' in choices[0]['label']
+    assert choices[0]['kind'] == 'juku' and ' · 电影 · 巨库在线目录' in choices[0]['label']
     assert not tools.acted
 
 

@@ -99,6 +99,8 @@ class MediaActions:
     def offer(self, text, request, result, cancelled, progress):
         from . import juku
         from .command_media import artwork
+        search_only = request.get('search_only', False)
+        automatic = result.automatic and not search_only
         choices = []
         art_deadline, art_clients = monotonic() + 2, {}
         for candidate in result.rows:
@@ -106,7 +108,7 @@ class MediaActions:
             if item['kind'] == 'emby':
                 from . import emby
                 from .emby_playback import label
-                if not result.automatic and monotonic() < art_deadline:
+                if not automatic and monotonic() < art_deadline:
                     try:
                         account = emby.account_for(self.tools.profile, item)
                         key = account['_identity']
@@ -128,9 +130,9 @@ class MediaActions:
                 label += ' · ' + ('巨库私有库' if origin == 'private' else '巨库在线目录')
                 choices.append(dict(item, label=label, value='播放《' + item['title'] + '》'))
                 continue
-            if not result.automatic and not result.movie_exact:
+            if not automatic and not result.movie_exact:
                 artwork(self.tools, item, cancelled)
-            if not result.movie_exact or not result.automatic:
+            if not result.movie_exact or not automatic:
                 item['_command_resume'] = request['resume']
             if item['kind'] == 'tvshow':
                 item['_command_tvshow'] = True
@@ -143,7 +145,7 @@ class MediaActions:
         if cancelled():
             raise InterruptedError('已取消查找。')
         self.tools.latest_matches = [self.tools.media[(row['kind'], row['id'])] for row in choices]
-        if result.automatic:
+        if automatic:
             if choices[0]['kind'] == 'emby':
                 answer = self.play_emby(text, choices[0], cancelled, progress)
             elif choices[0]['kind'] == 'juku':
@@ -155,11 +157,12 @@ class MediaActions:
                 answer = (self.play(text, choices[0], request['resume'], cancelled, progress) if result.movie_exact else
                           self.selected(text, choices[0], cancelled, progress))
         else:
-            message = ('找到多个同名影片或版本，请选择要播放的一项。' if result.movie_exact else
+            message = ('找到以下影视或频道，选择一项后播放。' if search_only else
+                       '找到多个同名影片或版本，请选择要播放的一项。' if result.movie_exact else
                        '找到这些相近的影视或频道，请选择要播放的一项。')
             if result.source != 'local' and not result.complete:
                 message += '部分媒体来源查询不完整，可补充完整片名或年份。'
             answer = self._outcome(text, message, choices)
         if answer is not None and result.matching is not None:
-            answer['matching'] = result.matching
+            answer['matching'] = (dict(result.matching, automatic=False, target=None) if search_only else result.matching)
         return answer

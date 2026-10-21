@@ -6,6 +6,45 @@ import unicodedata
 def normalize(value):
     return re.sub(r'\s+', '', unicodedata.normalize('NFKC', value)).casefold()
 
+
+def search_request(text):
+    """Only an explicit library scope makes a search a local media command."""
+    if not isinstance(text, str) or len(text) > 500:
+        return None
+    prefix = r'(?:请|麻烦)?(?:你)?\s*(?:帮我|给我)?\s*(?:我想要|我想|我要|想)?\s*'
+    library = r'(?P<library>媒体库|影视库|电影库|电视剧库|片库|库)(?:里面|里|中)?\s*'
+    scoped_library = r'(?P<library>媒体库|影视库|电影库|电视剧库|片库|库(?=\s|里|中|《))(?:里面|里|中)?\s*'
+    verb = r'(?:搜索|搜搜|搜|查找|查询|查查|查|找找|找)(?:一下|下)?\s*'
+    patterns = (
+        r'(?:(?:看看|看)(?:一下|下)?\s*|' + verb + r')?' + library + r'(?:有没有|是否有)\s*',
+        r'(?:从|在)\s*' + library + r'(?:帮我|给我)?\s*' + verb,
+        r'搜索\s*' + library,
+        verb + scoped_library,
+        library + verb,
+        library + r'有\s*',
+    )
+    value = text.strip()
+    for pattern in patterns:
+        match = re.match(prefix + pattern, value)
+        if match:
+            break
+    else:
+        return None
+    # Consume the complete command prefix before validating the remaining title;
+    # otherwise a bare "从库里搜索" can backtrack and treat "索" as a title.
+    name = value[match.end():].strip().rstrip('。!！?？').strip()
+    name = re.sub(r'(?:吗|么|呢)$', '', name).strip()
+    request = media_request('播放' + name)
+    if request is None or not request['resume'] or not request['allow_fuzzy']:
+        return None
+    kind = {'电影库': 'movie', '电视剧库': 'tvshow'}.get(match['library'])
+    if kind:
+        if request['kind'] not in ('all', kind):
+            return None
+        request['kind'] = kind
+    return dict(request, search_only=True)
+
+
 def media_request(text):
     """Accept a whole, explicit play utterance, never a keyword within a task."""
     if not isinstance(text, str) or len(text) > 500:

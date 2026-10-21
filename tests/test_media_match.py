@@ -113,6 +113,16 @@ def test_high_match_revalidates_cached_title_and_plays_without_model(library):
     assert '已变化' in result['reply'] and not any(name == 'Player.Open' for name, _ in calls[count:])
 
 
+def test_library_search_offers_a_high_phonetic_match_without_autoplay(library):
+    _, _, calls, tools = library
+    result = Commands(tools).process('库里有没有黑客帝果')
+    choices = parse(result['reply'], tools)['choices']
+    assert choices[0]['id'] == 2 and choices[0]['title'] == '黑客帝国'
+    assert not result['matching']['automatic'] and result['matching']['target'] is None
+    assert result['matching']['best_score'] >= .9 and not tools.acted
+    assert not any(method == 'Player.Open' for method, _ in calls)
+
+
 def test_low_matches_offer_verified_choices_and_click_keeps_resume(library):
     _, _, calls, tools = library
     result = Commands(tools).process('播放黑客')

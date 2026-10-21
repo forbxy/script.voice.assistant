@@ -2,6 +2,7 @@
 import copy
 from datetime import datetime
 import json
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -11,7 +12,20 @@ from resources.lib.intelligence.emby_client import Unavailable
 
 
 @pytest.fixture
-def cache_env(tmp_path):
+def cache_logs(monkeypatch):
+    records = []
+
+    def log(message, level):
+        assert message.startswith('[voice-emby-cache] ')
+        assert level == 1
+        records.append(json.loads(message[message.index('{'):]))
+
+    monkeypatch.setitem(sys.modules, 'xbmc', SimpleNamespace(log=log, LOGINFO=1))
+    return records
+
+
+@pytest.fixture
+def cache_env(tmp_path, cache_logs):
     account = {'_identity': 'test-account', '_revision': 'test-revision', 'ServerId': 'test-server'}
     items = [dict(Id='1', Name='惊天营救', Type='Movie', ProductionYear=2020),
              dict(Id='2', Name='测试电视剧', Type='Series', ProductionYear=2024)]
@@ -63,20 +77,27 @@ def cache_env(tmp_path):
 
     return SimpleNamespace(load=lambda: emby.catalogue(tmp_path, account, Client()), path=path,
                            state_path=state_path, items=items, changed=changed, flags=flags,
-                           account=account, events=events, expire=expire)
+                           account=account, events=events, expire=expire, logs=cache_logs, Client=Client)
+
+
+def full_start(env):
+    return next(record for record in reversed(env.logs) if record['event'] == 'full_start')
 
 
 def test_expired_check_does_not_rescan_or_rewrite_unchanged_titles(cache_env):
     e = cache_env
     expected = e.load()
     before, modified = e.path.read_bytes(), e.path.stat().st_mtime_ns
-    e.events.clear()
-    assert e.load() == expected and not e.events
+    e.events.clear(); e.logs.clear()
+    assert e.load() == expected and not e.events and not e.logs
     e.expire()
     assert e.load() == expected
     assert e.path.read_bytes() == before and e.path.stat().st_mtime_ns == modified
     assert [kind for kind, _ in e.events] == ['request', 'delta', 'request']
     assert json.loads(e.state_path.read_text())['mode'] == 'saved_since'
+    assert len(e.logs) == 1 and e.logs[0]['event'] == 'check_complete'
+    assert e.logs[0]['refresh'] == 'incremental' and e.logs[0]['snapshot_written'] is False
+    assert e.logs[0]['changed_count'] == 0 and e.logs[0]['merged_count'] == 2
 
 
 def test_same_count_rename_and_year_change_updates_only_saved_records(cache_env):
@@ -115,6 +136,10 @@ def test_membership_changes_rebuild_without_leaving_deleted_ids(cache_env, opera
     rows = e.load()
     assert {row['_emby_id'] for row in rows} == {row['Id'] for row in e.items}
     assert any(kind == 'full' for kind, _ in e.events)
+    record = full_start(e)
+    assert record['old_count'] == 2 and record['server_count_before'] == len(e.items)
+    assert record['full_reason'] == ('changed_item_missing_presentation' if operation == 'replace'
+                                     else 'server_count_changed')
 
 
 def test_silently_ignored_time_filter_uses_full_comparison_without_rewriting(cache_env):
@@ -126,6 +151,9 @@ def test_silently_ignored_time_filter_uses_full_comparison_without_rewriting(cac
     assert any(kind == 'full' for kind, _ in e.events)
     assert not any(kind == 'delta' for kind, _ in e.events)
     assert json.loads(e.state_path.read_text())['mode'] == 'full'
+    assert full_start(e)['full_reason'] == 'saved_filter_unsupported'
+    assert full_start(e)['saved_filter'] == 'future_range_not_empty'
+    assert full_start(e)['probe_future_count'] == 2
 
 
 def test_missing_server_date_falls_back_to_full_verification(cache_env):
@@ -135,6 +163,7 @@ def test_missing_server_date_falls_back_to_full_verification(cache_env):
     e.load()
     assert any(kind == 'full' for kind, _ in e.events)
     assert not any(kind == 'delta' for kind, _ in e.events)
+    assert full_start(e)['full_reason'] == 'server_date_missing'
 
 
 @pytest.mark.parametrize('cancel', [True, False])
@@ -180,6 +209,7 @@ def test_invalid_delta_falls_back_to_complete_snapshot(cache_env):
     e.load()
     assert e.path.read_bytes() == before
     assert json.loads(e.state_path.read_text())['mode'] == 'full'
+    assert full_start(e)['full_reason'] == 'delta_invalid'
 
 
 def test_server_losing_incremental_support_falls_back_to_full_comparison(cache_env):
@@ -190,6 +220,7 @@ def test_server_losing_incremental_support_falls_back_to_full_comparison(cache_e
     assert e.path.read_bytes() == before
     assert [kind for kind, _ in e.events] == ['request', 'delta', 'full']
     assert json.loads(e.state_path.read_text())['mode'] == 'full'
+    assert full_start(e)['full_reason'] == 'delta_query_failed'
 
 
 @pytest.mark.parametrize('legacy', [False, True])
@@ -216,6 +247,7 @@ def test_same_title_different_presentation_is_not_treated_as_a_version(cache_env
     e.changed.append(dict(e.items[0], Id='different', PresentationUniqueKey='new-film'))
     e.load()
     assert any(kind == 'full' for kind, _ in e.events)
+    assert full_start(e)['full_reason'] == 'canonical_identity_changed'
 
 
 def test_removed_canonical_version_is_not_kept_by_matching_presentation(cache_env):
@@ -227,3 +259,101 @@ def test_removed_canonical_version_is_not_kept_by_matching_presentation(cache_en
     rows = e.load()
     assert {row['_emby_id'] for row in rows} == {'replacement', '2'}
     assert any(kind == 'full' for kind, _ in e.events)
+    assert full_start(e)['full_reason'] == 'version_lookup_failed'
+    assert full_start(e)['merge_step'] == 'canonical_details'
+
+
+@pytest.mark.parametrize('matches', [0, 2])
+def test_unmatched_and_ambiguous_versions_log_distinct_fallbacks(cache_env, matches):
+    e = cache_env
+    if matches:
+        for item in e.items:
+            item.update(Name='同名电影', Type='Movie', ProductionYear=2020, PresentationUniqueKey='same')
+    e.load(); e.expire(); e.logs.clear()
+    e.changed.append(dict(Id='secondary', Name='新编号', Type='Movie', PresentationUniqueKey='same'))
+    e.load()
+    record = full_start(e)
+    assert record['full_reason'] == ('canonical_ambiguous' if matches else 'canonical_not_found')
+    assert record['canonical_matches'] == matches and record['changed_count'] == 1
+
+
+def test_initial_and_account_change_refreshes_explain_cache_invalidation(cache_env):
+    e = cache_env
+    e.load()
+    assert full_start(e)['full_reason'] == 'cache_missing'
+    assert full_start(e)['old_count'] is None
+    e.account['_revision'] = 'new-login-secret'
+    e.account.update(ServerUrl='https://private-server.invalid', AccessToken='secret-token')
+    e.logs.clear(); e.load()
+    assert full_start(e)['full_reason'] == 'account_revision_changed'
+    complete = e.logs[-1]
+    assert complete['event'] == 'check_complete' and complete['refresh'] == 'full'
+    assert complete['new_count'] == 2 and complete['snapshot_written'] is True
+    assert {'full_fetch', 'full_validate', 'snapshot_write', 'cursor_write'} <= complete['stages_ms'].keys()
+    assert complete['elapsed_ms'] >= 0 and all(value >= 0 for value in complete['stages_ms'].values())
+    text = json.dumps(e.logs, ensure_ascii=False)
+    assert all(secret not in text for secret in ('new-login-secret', 'private-server', 'secret-token', '惊天营救'))
+
+
+@pytest.mark.parametrize('since', [None, -1, 99999999999])
+def test_invalid_incremental_cursor_is_logged_without_exposing_its_contents(cache_env, since):
+    e = cache_env
+    e.load(); e.expire()
+    state = json.loads(e.state_path.read_text())
+    state['since'] = since
+    e.state_path.write_text(json.dumps(state))
+    e.logs.clear(); e.load()
+    assert full_start(e)['full_reason'] == 'since_invalid'
+    assert full_start(e)['cursor_status'] == 'valid'
+
+
+def test_count_change_during_incremental_check_is_distinct_from_initial_count_change(cache_env, monkeypatch):
+    e = cache_env
+    e.load(); e.expire(); e.logs.clear()
+    pages = e.Client.pages
+
+    def change_while_querying(client, params):
+        result = pages(client, params)
+        if params.get('MinDateLastSaved'):
+            e.items.append(dict(Id='3', Name='新片', Type='Movie'))
+        return result
+
+    monkeypatch.setattr(e.Client, 'pages', change_while_querying)
+    assert len(e.load()) == 3
+    record = full_start(e)
+    assert record['full_reason'] == 'server_count_changed_during_delta'
+    assert record['old_count'] == record['server_count_before'] == record['merged_count'] == 2
+    assert record['server_count_after'] == 3
+
+
+@pytest.mark.parametrize('error', [Unavailable('https://private.invalid/?token=secret'), InterruptedError('private')])
+def test_full_scan_start_and_failure_are_logged_before_error_without_advancing_cache(cache_env, monkeypatch, error):
+    e = cache_env
+    e.load(); e.expire(); e.logs.clear()
+    before, state = e.path.read_bytes(), e.state_path.read_bytes()
+    e.items.append(dict(Id='3', Name='新片', Type='Movie'))
+
+    def fail(client, params):
+        assert e.logs[-1]['event'] == 'full_start'
+        assert e.logs[-1]['full_reason'] == 'server_count_changed'
+        raise error
+
+    monkeypatch.setattr(e.Client, 'pages', fail)
+    with pytest.raises(type(error)):
+        e.load()
+    assert [record['event'] for record in e.logs] == [
+        'full_start', 'check_cancelled' if isinstance(error, InterruptedError) else 'check_failed']
+    assert e.logs[-1]['stage'] == 'full_fetch'
+    assert e.logs[-1]['error_type'] == type(error).__name__
+    assert e.path.read_bytes() == before and e.state_path.read_bytes() == state
+    assert 'private' not in json.dumps(e.logs) and 'secret' not in json.dumps(e.logs)
+
+
+def test_broken_kodi_logger_cannot_break_cache_refresh(cache_env, monkeypatch):
+    def fail(*args):
+        raise RuntimeError('logger unavailable')
+
+    monkeypatch.setitem(sys.modules, 'xbmc', SimpleNamespace(log=fail, LOGINFO=1))
+    assert len(cache_env.load()) == 2
+    cache_env.expire()
+    assert len(cache_env.load()) == 2
