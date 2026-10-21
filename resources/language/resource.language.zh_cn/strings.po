@@ -633,8 +633,8 @@ msgid "AI 权限档位"
 msgstr "AI 权限档位"
 
 msgctxt "#31055"
-msgid "一档：查询与播放控制"
-msgstr "一档：查询与播放控制"
+msgid "一档：本地命令能力"
+msgstr "一档：本地命令能力"
 
 msgctxt "#31056"
 msgid "二档：额外修改设置"

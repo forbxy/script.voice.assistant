@@ -2,6 +2,38 @@
 import time
 
 
+CONTROL_TOOLS = frozenset(('control_playback', 'seek_playback', 'set_volume', 'set_mute',
+    'set_playback_track', 'set_audio_delay', 'adjust_subtitles', 'set_video_view',
+    'set_playlist_mode', 'edit_playlist'))
+CONTROL_READS = frozenset(('get_kodi_status', 'get_playback_details', 'get_playlist'))
+
+
+def local_control(text):
+    """Recognize controls that can finish before any conversation UI exists."""
+    from ..intelligence.command_rules import common_request
+    request = common_request(text)
+    return bool(request and (request.get('tool') in CONTROL_TOOLS or 'volume_delta' in request or 'continue_kind' in request))
+
+
+def controls_completed(presentation, outcome):
+    """Only host-recorded successful controls may dismiss a response window."""
+    if presentation.get('choices') or not outcome:
+        return False
+    controlled = False
+    # Earlier steering rounds stay in the audit trace, but cannot dismiss the
+    # answer to a later question that did not itself perform playback control.
+    for row in outcome.get('round_tools', outcome.get('tools', [])):
+        if not isinstance(row, dict) or row.get('ok') is not True:
+            return False
+        name = row.get('name')
+        if name in CONTROL_TOOLS or (name == 'sleep_timer' and
+                (row.get('arguments') or {}).get('action') in ('set', 'cancel')):
+            controlled = True
+        elif name not in CONTROL_READS:
+            return False
+    return controlled
+
+
 class TaskPlayback:
     def __init__(self, rpc, builtin, monitor, requests, elapsed, before, read_state, close_for_playback):
         self.native_rpc, self.builtin, self.monitor, self.requests = rpc, builtin, monitor, requests
@@ -62,7 +94,7 @@ class TaskPlayback:
             background.foreground()
             raise
 
-    def present(self, presentation, tools):
+    def present(self, presentation, tools, outcome=None):
         if getattr(tools, 'ui_action', None):
             presentation['ui_action'] = tools.ui_action
         if getattr(tools, 'ui_handed_off', False):
@@ -70,6 +102,9 @@ class TaskPlayback:
         after = self.read_state()
         if self.close_for_playback(self.before, after, tools):
             self.state = 'playing'
+            presentation['interaction'] = 'close'
+        elif controls_completed(presentation, outcome):
+            self.state = 'controlled'
             presentation['interaction'] = 'close'
         for timing in self.timing:
             if 'handoff_seconds' in timing:

@@ -63,7 +63,7 @@ FIELDS = {
     'agent_code_mode': Field('off', '启用 Code Mode', 'agent',
         (('off', '关'), ('on', '开（接口需支持 exec 自定义工具）')), visible='agent_backend=codex&codex_provider=api'),
     'permission_level': Field('settings', 'AI 权限档位', 'agent',
-        (('media', '一档：查询与播放控制'), ('settings', '二档：额外修改设置'), ('full', '三档：不设限'))),
+        (('media', '一档：本地命令能力'), ('settings', '二档：额外修改设置'), ('full', '三档：不设限'))),
     'approval_strategy': Field('request', '审批策略', 'agent',
         (('request', '请求审批'), ('auto_review', '帮我审批（Codex 自动审批）'), ('full_access', '完全访问控制')), visible='agent_backend=codex'),
     'session_policy': Field('conversation', '对话 session 有效期', 'agent',

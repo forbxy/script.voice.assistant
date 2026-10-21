@@ -54,8 +54,10 @@ def power(monkeypatch):
 
 @pytest.mark.parametrize('phrase,verb', [('关机', 'poweroff'), ('重启', 'reboot'), ('睡眠', 'suspend'),
                                        ('重启到安卓', 'reboot')])
-def test_local_power_retains_confirmation_and_only_schedules_at_commit(power, phrase, verb):
+@pytest.mark.parametrize('level', ['media', 'settings', 'full'])
+def test_local_power_retains_confirmation_and_only_schedules_at_commit(power, phrase, verb, level):
     state, rpc_calls, confirmations, scheduled, tools = power
+    tools.permissions = Permissions(level, 'request')
     result = Commands(tools).process(phrase)
     assert result['model_invocations'] == 0 and result['tools'][-1]['ok']
     assert len(confirmations) == 1 and not scheduled
@@ -92,19 +94,22 @@ def test_unsupported_sleep_does_not_fall_back_to_shutdown_or_hibernate(power):
     assert len(rpc_calls) == 1 and not confirmations and not scheduled and tools.deferred is None
 
 
-@pytest.mark.parametrize('level', ['media', 'settings'])
-def test_local_power_cannot_raise_the_selected_permission_level(power, level):
-    _, rpc_calls, confirmations, scheduled, tools = power
-    tools.permissions = Permissions(level, 'full_access')
-    for text in ('关机', '重启', '睡眠'):
-        result = Commands(tools).process(text)
-        assert result['model_invocations'] == 0 and not result['tools'][-1]['ok']
-    assert not rpc_calls and not confirmations and not scheduled
+@pytest.mark.parametrize('level', ['media', 'settings', 'full'])
+@pytest.mark.parametrize('phrase', ['关机', '重启', '睡眠', '重启到安卓'])
+def test_local_power_at_every_level_still_respects_a_declined_confirmation(power, level, phrase):
+    state, _, confirmations, scheduled, tools = power
+    tools.permissions = Permissions(level, 'request')
+    state['allowed'] = False
+    result = Commands(tools).process(phrase)
+    assert result['model_invocations'] == 0 and not result['tools'][-1]['ok']
+    assert '用户取消' in result['reply'] and len(confirmations) == 1
+    assert tools.deferred is None and not scheduled
 
 
-def test_local_power_works_with_agent_off_and_existing_automatic_approval(power):
+@pytest.mark.parametrize('level', ['media', 'settings', 'full'])
+def test_local_power_works_with_agent_off_and_existing_automatic_approval(power, level):
     _, _, confirmations, scheduled, old_tools = power
-    tools = create_tools(None, {'agent_backend': 'off', 'permission_level': 'full', 'approval_strategy': 'full_access'},
+    tools = create_tools(None, {'agent_backend': 'off', 'permission_level': level, 'approval_strategy': 'full_access'},
                          old_tools.rpc, confirm=old_tools.confirm)
     result = Commands(tools).process('进入睡眠模式')
     assert result['model_invocations'] == 0 and result['tools'][-1]['ok'] and tools.deferred == 'suspend'

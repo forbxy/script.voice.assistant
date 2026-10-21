@@ -11,6 +11,7 @@ import xbmcgui
 import xbmcvfs
 
 from .settings import Settings, get_setting, set_setting, get_proxy
+from .ui import NOTIFICATION_ICON
 
 ADDON_ID = 'script.voice.assistant'
 PROPERTY = 'VoiceAssistant.'
@@ -81,7 +82,8 @@ def capture(addon, profile, microphone_factory=None, values=None, progress=None,
         text = current['text'].strip()
         if not current['speech_detected'] or not text:
             session['state'] = 'no_text'
-            xbmcgui.Dialog().notification('语音助手', '没有识别出文字，请靠近麦克风再说一次。', sound=False)
+            xbmcgui.Dialog().notification('语音助手', '没有识别出文字，请靠近麦克风再说一次。',
+                                         icon=NOTIFICATION_ICON, sound=False)
             return None
         session['state'] = 'done'
         home.setProperty(PROPERTY + 'LastText', text)
@@ -164,20 +166,36 @@ def _conversation(addon, profile, initial_token=None, initial_source=None, initi
     from .intelligence.sessions import Sessions, signature
     values = config.values()
     sessions = Sessions(profile, values['session_policy'], signature(values))
-    from .ui.conversation import ConversationWindow
     from .ui.agent_turn import run_turn, playback_state, close_for_playback
-    from .ui.conversation import ConversationProgress
+    from .ui.task_playback import local_control
     from .intelligence.transcript import Transcript
-    from .ui.live_input import LiveInput
-    from .ui.background import Background
     transcript = Transcript(profile, sessions.history_id)
     text = initial_text
     selection = None
     window = None
     speaker = None
     background = None
-    from .speech.client import Speech
     try:
+        pending_presentation = None
+        pending_failed = False
+        if local_control(text):
+            home.setProperty(PROPERTY + 'State', 'thinking')
+            try:
+                pending_presentation = run_turn(root, profile, values, text, sessions, rpc,
+                    xbmc.executebuiltin, home, monitor, ui_context=ui_context)
+            except Exception as error:
+                pending_failed = True
+                pending_presentation = {'message': '处理失败：' + str(error), 'interaction': 'continue', 'choices': []}
+            if pending_presentation is None:
+                return
+            if pending_presentation['interaction'] == 'close':
+                transcript.begin(text)
+                transcript.finish(pending_presentation)
+                return
+        from .ui.conversation import ConversationWindow, ConversationProgress
+        from .ui.live_input import LiveInput
+        from .ui.background import Background
+        from .speech.client import Speech
         window = ConversationWindow('VoiceConversation.xml', root, 'Default', '1080i')
         window.show()
         while not window.ready.is_set() and not monitor.abortRequested():
@@ -212,9 +230,14 @@ def _conversation(addon, profile, initial_token=None, initial_source=None, initi
                 transcript.message(role, message)
             window.accepting_input = window.task_active = True
             window.task_stop.clear()
-            failed = False
+            failed, pending_failed = pending_failed, False
             try:
-                presentation = (run_turn(root, profile, values, text, sessions, rpc, xbmc.executebuiltin, home, monitor,
+                if pending_presentation is not None:
+                    # A failed small-window control is displayed once, never
+                    # retried while promoting its result to the conversation.
+                    presentation, pending_presentation = pending_presentation, None
+                else:
+                    presentation = (run_turn(root, profile, values, text, sessions, rpc, xbmc.executebuiltin, home, monitor,
                                         progress=ConversationProgress(window), poll_input=live_input.poll, on_message=append_input, speech=speaker,
                                         ui_context=ui_context, selection=selection, background=background))
             except Exception as error:
@@ -401,7 +424,7 @@ def action(addon, profile, arguments):
                     set_setting(addon, 'codex_chatgpt_effort', '' if index == 0 else efforts[index - 1])
     elif '--clear-agent-context' in arguments:
         (data_path(profile, 'conversation.json')).unlink(missing_ok=True)
-        xbmcgui.Dialog().notification('语音助手', '下次指令将新建对话。', sound=False)
+        xbmcgui.Dialog().notification('语音助手', '下次指令将新建对话。', icon=NOTIFICATION_ICON, sound=False)
     else:
         return False
     return True

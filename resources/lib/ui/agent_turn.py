@@ -186,7 +186,7 @@ class TurnController:
         outcome, tools = self.task.outcome, self.task.tools
         scheduled = tools.commit_deferred(self.monitor.abortRequested)
         presentation = parse(outcome['reply'], tools)
-        self.playback.present(presentation, tools)
+        self.playback.present(presentation, tools, outcome)
         self.home.setProperty('VoiceAssistant.AgentReply', presentation['message'])
         write_json(data_path(self.profile, 'last_agent.json'), {'state': 'done', 'version': VERSION,
             'permissions': self.values['permission_level'], 'approval_strategy': self.values['approval_strategy'],

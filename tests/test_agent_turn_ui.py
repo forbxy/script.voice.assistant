@@ -36,6 +36,47 @@ def test_only_this_turn_actual_fullscreen_video_closes(turn_ui):
 
 
 @pytest.mark.parametrize('backend', ['off', 'codex', 'codebuddy'])
+@pytest.mark.parametrize('phrase', ['暂停', '继续播放', '停止播放', '下一项', '上一项',
+                                  '从头播放', '快进三十秒', '后退三十秒', '声音小一点',
+                                  '跳转到一分三十秒', '跳到01:30:00',
+                                  '音量调到三十', '静音', '取消静音', '关闭字幕'])
+def test_control_turn_returns_close_after_success_for_every_backend(turn_ui, tmp_path, monkeypatch, backend, phrase):
+    from resources.lib.intelligence.sessions import Sessions
+    progress = SimpleNamespace(create=lambda *args: None, set_recording=lambda *args: None,
+        update=lambda *args: None, iscanceled=lambda: False, close=lambda: None, activity=lambda *args: None)
+    def rpc(method, params):
+        if method == 'Player.GetActivePlayers':return [{'playerid': 1, 'type': 'video'}]
+        if method == 'Player.GetProperties':
+            return {'canseek': True, 'time': {'hours': 0, 'minutes': 5, 'seconds': 0},
+                    'totaltime': {'hours': 1, 'minutes': 0, 'seconds': 0}}
+        if method == 'Application.GetProperties':return {'volume': 50}
+        if method == 'Application.SetVolume':return params['volume']
+        if method == 'Application.SetMute':return params['mute']
+        if method in ('Player.PlayPause', 'Player.Stop', 'Player.GoTo', 'Player.Seek', 'Player.SetSubtitle'):return 'OK'
+        raise AssertionError(method)
+    monkeypatch.setattr(turn_ui, 'create_agent', lambda *args, **kwargs: pytest.fail('A local control started a model'))
+    monkeypatch.setattr(turn_ui, 'playback_state', lambda: (False, ''))
+    result = turn_ui.run_turn('', tmp_path,
+        {'agent_backend': backend, 'permission_level': 'media', 'approval_strategy': 'request'},
+        phrase, Sessions(tmp_path), rpc, None, SimpleNamespace(setProperty=lambda *args: None),
+        SimpleNamespace(abortRequested=lambda: False, waitForAbort=lambda n: None), progress)
+    assert result['interaction'] == 'close' and result['choices'] == []
+
+
+def test_failed_control_turn_keeps_error_visible(turn_ui, tmp_path, monkeypatch):
+    from resources.lib.intelligence.sessions import Sessions
+    progress = SimpleNamespace(create=lambda *args: None, set_recording=lambda *args: None,
+        update=lambda *args: None, iscanceled=lambda: False, close=lambda: None, activity=lambda *args: None)
+    def rpc(*args):raise ValueError('播放器未响应')
+    monkeypatch.setattr(turn_ui, 'playback_state', lambda: (False, ''))
+    result = turn_ui.run_turn('', tmp_path,
+        {'agent_backend': 'off', 'permission_level': 'media', 'approval_strategy': 'request'},
+        '暂停', Sessions(tmp_path), rpc, None, SimpleNamespace(setProperty=lambda *args: None),
+        SimpleNamespace(abortRequested=lambda: False, waitForAbort=lambda n: None), progress)
+    assert result['interaction'] == 'continue' and '播放器未响应' in result['message']
+
+
+@pytest.mark.parametrize('backend', ['off', 'codex', 'codebuddy'])
 def test_local_command_never_constructs_model_even_when_agent_is_disabled(turn_ui, tmp_path, monkeypatch, backend):
     import json
     from resources.lib.intelligence.sessions import Sessions

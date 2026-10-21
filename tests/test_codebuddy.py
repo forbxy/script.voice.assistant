@@ -108,11 +108,29 @@ def test_permission_ceiling_and_native_approval(tmp_path):
         permissions=Permissions('full', 'request'), confirm=lambda *args: confirmations.append(args) or True)
     agent.run('查询')
     assert protocol.sent[1]['response']['response']['allowed'] and 'uname -a' in confirmations[0][1]
-    agent, protocol, calls = make_agent(tmp_path, [mcp('system_action', {'action': 'restart_kodi'}),
+    agent, protocol, calls = make_agent(tmp_path, [mcp('set_setting', {'setting': 'audiooutput.passthrough', 'json_value': 'true'}),
         {'type': 'result', 'result': '未执行'}])
-    agent.run('重启')
+    agent.permissions = agent.tools.permissions = Permissions('media', 'request')
+    agent.run('修改设置')
     reply = protocol.sent[1]['response']['response']['mcp_response']['result']
     assert reply['isError'] and not calls
+
+
+def test_tier_one_mcp_upload_is_available_but_still_requires_confirmation(tmp_path, monkeypatch):
+    from resources.lib import log_upload
+    confirmations, uploads = [], []
+    monkeypatch.setattr(log_upload, 'upload', lambda **kwargs: uploads.append('upload') or
+                        {'uploaded': True, 'url': 'https://paste.coreelec.org/TEST-NOT-UPLOADED'})
+    for approved in (False, True):
+        agent, protocol, calls = make_agent(tmp_path, [mcp('upload_logs', {}),
+            {'type': 'result', 'result': '完成'}], permissions=Permissions('media', 'request'))
+        agent.tools.permissions = agent.permissions
+        agent.tools.confirm = lambda title, message: confirmations.append(title) or approved
+        outcome = agent.run('上传日志')
+        reply = protocol.sent[1]['response']['response']['mcp_response']['result']
+        assert bool(reply.get('isError')) is not approved
+        assert outcome['tools'][-1]['ok'] is approved and not calls
+    assert confirmations == ['上传日志', '上传日志'] and uploads == ['upload']
 
 
 def test_questions_use_existing_ui_and_cancel_expires(tmp_path):

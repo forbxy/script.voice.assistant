@@ -5,6 +5,7 @@ import xbmcgui
 
 from ..inputs.registry import claim, pending
 from .activation import PREFIX
+from . import NOTIFICATION_ICON
 
 
 class Background:
@@ -84,7 +85,8 @@ class Background:
     def complete(self, failed=False):
         if self.window.backgrounded and not self.monitor.abortRequested():
             xbmcgui.Dialog().notification('AI 语音助手',
-                '后台任务处理失败，请按语音键查看。' if failed else '后台任务已完成。', time=5000, sound=False)
+                '后台任务处理失败，请按语音键查看。' if failed else '后台任务已完成。',
+                icon=NOTIFICATION_ICON, time=5000, sound=False)
 
     def close(self):
         for name in ('Background', 'ForegroundRequested'):

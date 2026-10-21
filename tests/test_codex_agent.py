@@ -108,6 +108,26 @@ def test_uploaded_log_url_is_shown_even_if_subsequent_model_reply_fails(tmp_path
     assert protocol.closed
 
 
+@pytest.mark.parametrize('approved', [False, True])
+def test_tier_one_dynamic_upload_is_available_but_still_requires_confirmation(tmp_path, monkeypatch, approved):
+    from resources.lib import log_upload
+    uploads, confirmations = [], []
+    monkeypatch.setattr(log_upload, 'upload', lambda **kwargs: uploads.append('upload') or
+                        {'uploaded': True, 'url': 'https://paste.coreelec.org/TEST-NOT-UPLOADED'})
+    event = dynamic({})
+    event['params']['tool'] = 'upload_logs'
+    agent, protocol = make_agent(tmp_path, [event, finished()])
+    agent.root = Path(__file__).resolve().parents[1]
+    agent.permissions = agent.tools.permissions = Permissions('media', 'request')
+    agent.tools.confirm = lambda title, message: confirmations.append(title) or approved
+    result = agent.run('上传日志')
+    names = {row['name'] for row in protocol.requests[1][1]['dynamicTools']}
+    assert {'upload_logs', 'system_action'} <= names
+    assert result['tools'][-1]['ok'] is approved
+    assert confirmations == ['上传日志'] and uploads == (['upload'] if approved else [])
+    assert protocol.requests[1][1]['sandbox'] == 'read-only'
+
+
 def test_native_execution_is_recorded_without_logging_commands_or_secrets(tmp_path):
     event = {'method': 'item/completed', 'params': {'item': {'type': 'commandExecution',
              'command': 'echo test-private-key', 'exitCode': 0}}}

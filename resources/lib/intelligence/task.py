@@ -87,7 +87,7 @@ class TaskWorker:
                     agent, self.tools = self.make_agent(self.tools, self.tool_options)
                 outcome = agent.run(current, cancelled=self.cancelled, progress=self.report, **options)
             trace.extend(outcome['tools'])
-            self.outcome = dict(outcome, tools=list(trace))
+            self.outcome = dict(outcome, tools=list(trace), round_tools=list(outcome['tools']))
             self.sessions.completed(self.tools.media.values())
             if self.steering is None:
                 return

@@ -71,16 +71,14 @@ def test_timeout_is_bounded(tmp_path, monkeypatch):
     assert time.monotonic() - began < 2
 
 
-def test_upload_respects_permissions_approval_and_success_is_not_uploaded_twice(monkeypatch):
+@pytest.mark.parametrize('level', ['media', 'settings', 'full'])
+def test_upload_respects_permissions_approval_and_success_is_not_uploaded_twice(monkeypatch, level):
     calls = []
     monkeypatch.setattr(log_upload, 'upload', lambda **kw: calls.append('upload') or
                         {'uploaded': True, 'url': 'https://paste.coreelec.org/test'})
-    for level in ('media', 'settings'):
-        tools = KodiTools(lambda *a: None, permissions=Permissions(level, 'full_access'), confirm=lambda *a: True)
-        assert not tools.execute('upload_logs', {})['ok']
-    tools = KodiTools(lambda *a: None, permissions=Permissions('full'), confirm=lambda *a: False)
+    tools = KodiTools(lambda *a: None, permissions=Permissions(level), confirm=lambda *a: False)
     assert not tools.execute('upload_logs', {})['ok'] and not calls
-    tools = KodiTools(lambda *a: None, permissions=Permissions('full'), confirm=lambda *a: True)
+    tools = KodiTools(lambda *a: None, permissions=Permissions(level), confirm=lambda *a: True)
     assert not tools.execute('upload_logs', {'command': 'other-command'})['ok']
     first = tools.execute('upload_logs', {})
     assert first['ok'] and tools.acted

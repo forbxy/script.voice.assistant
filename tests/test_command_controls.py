@@ -4,6 +4,7 @@ from resources.lib.agent_tools import KodiTools
 from resources.lib.intelligence.commands import Commands
 from resources.lib.intelligence.command_rules import common_request, number
 from resources.lib.intelligence.presentation import parse
+from resources.lib.intelligence.permissions import Permissions
 
 
 @pytest.mark.parametrize('text,expected', [
@@ -16,7 +17,6 @@ def test_clear_numbers_only(text, expected):
 
 @pytest.mark.parametrize('text,tool,arguments', [
     ('暂停播放', 'control_playback', {'action': 'pause'}),
-    ('请继续播放', 'control_playback', {'action': 'play'}),
     ('停止播放', 'control_playback', {'action': 'stop'}),
     ('下一项', 'control_playback', {'action': 'next'}),
     ('静音', 'set_mute', {'muted': True}),
@@ -108,6 +108,91 @@ def test_relative_volume_clamps_and_seek_uses_seconds(controls):
     Commands(tools).process('快进一分半')
     assert calls[-1] == ('Player.Seek', {'playerid': 1, 'value': {'time': {
         'hours': 0, 'minutes': 11, 'seconds': 30, 'milliseconds': 0}}})
+
+
+@pytest.mark.parametrize('text,seconds', [
+    ('跳转到十分钟', 600), ('跳到一分三十秒', 90), ('跳至01:30', 90),
+    ('跳转至01:30:00', 5400), ('快进到半小时', 1800), ('快退到半分钟', 30),
+    ('后退到第十分钟', 600), ('把播放进度调到一个半小时', 5400),
+    ('把进度拖到一小时半', 5400), ('请帮我跳转到零秒。', 0),
+    ('跳转到第1小时2分3秒处', 3723), ('跳到1个小时', 3600),
+    ('播放进度跳到一小时零二分零三秒', 3723), ('视频跳到三十分钟的位置', 1800),
+    ('将播放位置调到30秒吧', 30), ('跳转到半个小时', 1800),
+    ('跳转到一分半', 90), ('跳到九十分钟', 5400), ('跳到九十秒', 90),
+    ('跳到 ０１：３０', 90), ('跳转到0:00:00', 0), ('跳到90:00', 5400),
+    ('跳转到23:59:59', 86399), ('跳到二十三小时五十九分五十九秒', 86399),
+])
+def test_absolute_seek_requires_an_explicit_elapsed_time(text, seconds):
+    request = common_request(text)
+    assert request['tool'] == 'seek_playback'
+    assert request['arguments'] == {'seconds': seconds, 'absolute': True}
+
+
+@pytest.mark.parametrize('text', [
+    '定位到十分钟', '定位十分钟', '把进度定位到十分钟', '定位到北京',
+    '不要跳转到十分钟', '跳转到十分钟了吗', '能不能跳到十分钟',
+    '跳到十分钟然后暂停', '跳到十分钟，再关机', '如果太长就跳到十分钟',
+    '跳转到30', '跳到明天', '跳转到十点半', '跳到-30秒', '跳到1.5分钟',
+    '跳到01:60', '跳到01:60:00', '跳到24:00:00', '跳到1440:00',
+    '跳到一分六十秒', '跳到一小时六十分', '跳到两百五分钟', '跳到半',
+    '跳到1:2:3:4', '跳到0', '跳转到一万秒',
+])
+def test_ambiguous_invalid_and_location_requests_are_not_local_seeks(text):
+    assert common_request(text) is None
+
+
+@pytest.mark.parametrize('level', ['media', 'settings', 'full'])
+@pytest.mark.parametrize('phrase,seconds', [
+    ('跳转到一分三十秒', 90), ('跳到零秒', 0), ('快进到半小时', 1800),
+    ('跳到两个小时', 3600),  # Clamp to this fixture's one-hour film.
+])
+def test_absolute_seek_uses_time_from_start_without_resuming_or_reopening(controls, level, phrase, seconds):
+    _, _, calls, tools = controls
+    tools.permissions = Permissions(level)
+    result = Commands(tools).process(phrase)
+    assert result['model_invocations'] == 0 and result['tools'][-1]['ok']
+    assert calls[-1] == ('Player.Seek', {'playerid': 1, 'value': {'time': {
+        'hours': seconds // 3600, 'minutes': seconds // 60 % 60, 'seconds': seconds % 60, 'milliseconds': 0}}})
+    assert not any(method in ('Player.PlayPause', 'Player.Open') for method, _ in calls)
+    assert tools.acted and not tools.playback_started
+
+
+@pytest.mark.parametrize('phrase', ['跳转到十分钟', '快进三十秒'])
+def test_seek_rejects_streams_without_seek_support(controls, phrase):
+    state, _, calls, tools = controls
+    state['canseek'] = False
+    result = Commands(tools).process(phrase)
+    assert not result['tools'][-1]['ok'] and '不支持跳转' in result['reply']
+    assert not any(method == 'Player.Seek' for method, _ in calls)
+
+
+def test_absolute_seek_handles_no_active_player_and_unknown_duration(controls):
+    _, _, calls, tools = controls
+    original = tools.rpc
+    tools.rpc = lambda *args: []
+    result = Commands(tools).process('跳转到十分钟')
+    assert not result['tools'][-1]['ok'] and '没有正在播放' in result['reply']
+    assert not calls
+    def unknown(method, params):
+        result = original(method, params)
+        if method == 'Player.GetProperties':
+            result['totaltime'] = dict(hours=0, minutes=0, seconds=0)
+        return result
+    tools.rpc = unknown
+    result = tools.execute('seek_playback', {'seconds': 5400, 'absolute': True})
+    assert result['ok'] and result['position_seconds'] == 5400
+    assert calls[-1][1]['value']['time'] == dict(hours=1, minutes=30, seconds=0, milliseconds=0)
+
+
+@pytest.mark.parametrize('arguments', [
+    {'seconds': -1, 'absolute': True}, {'seconds': 86400, 'absolute': True},
+    {'seconds': 3601}, {'seconds': 5400, 'absolute': False},
+    {'seconds': True, 'absolute': True}, {'seconds': 10, 'absolute': 'true'},
+])
+def test_ai_seek_arguments_cannot_bypass_absolute_or_relative_bounds(controls, arguments):
+    _, _, calls, tools = controls
+    assert not tools.execute('seek_playback', arguments)['ok']
+    assert not calls
 
 
 @pytest.mark.parametrize('phrase', ['从头播放', '从头看', '从头开始', '重新播放', '重新开始',

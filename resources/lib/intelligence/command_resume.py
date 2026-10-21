@@ -1,4 +1,4 @@
-"""Continue the matching player or Kodi's latest real viewing history."""
+"""Continue the matching player or the latest verified Kodi/Emby viewing history."""
 
 
 def _resumable(row):
@@ -73,11 +73,15 @@ def resume(commands, text, kind, cancelled, progress):
         if cancelled():
             raise InterruptedError('已取消。')
         players = tools.rpc('Player.GetActivePlayers', {})
+        players.sort(key=lambda player: player.get('type') != 'video')
         for player in players:
             if cancelled():
                 raise InterruptedError('已取消。')
-            if player.get('type') != 'video':
+            if player.get('type') not in (('video', 'audio') if kind == 'all' else ('video',)):
                 continue
+            if kind == 'all':
+                return commands._common(text, {'tool': 'control_playback', 'arguments': {'action': 'play'},
+                                              'message': '已发送继续播放指令。'}, cancelled, progress)
             item = tools.rpc('Player.GetItem', {'playerid': player['playerid'],
                                                'properties': ['title', 'channeltype']}).get('item') or {}
             expected = 'episode' if kind == 'tvshow' else kind
@@ -100,32 +104,31 @@ def resume(commands, text, kind, cancelled, progress):
             row = dict(rows[0], title=rows[0].get('channel') or rows[0].get('label', ''))
             chosen = tools._remember([row], 'channel')[0]
             return commands._play(text, chosen, False, cancelled, progress)
-        name, key = ('Movies', 'movies') if kind == 'movie' else ('TVShows', 'tvshows')
-        fields = (['title', 'year', 'lastplayed', 'playcount', 'resume'] if kind == 'movie' else
-                  ['title', 'year', 'lastplayed', 'watchedepisodes'])
-        result = tools.rpc('VideoLibrary.Get' + name, {'properties': fields,
-            'sort': {'method': 'lastplayed', 'order': 'descending'}, 'limits': {'start': 0, 'end': 13}})
-        if cancelled():
-            raise InterruptedError('已取消。')
-        rows = [row for row in result.get(key, []) if row.get('lastplayed')]
+        from .recent_playback import latest
+        rows, complete = latest(tools, kind, cancelled, progress)
         if not rows:
-            return commands._outcome(text, '没有找到最近观看的' + ('电影' if kind == 'movie' else '电视剧') + '记录，请先指定片名。')
-        latest = rows[0]['lastplayed']
-        rows = tools._remember([row for row in rows if row['lastplayed'] == latest], kind)
-        if len(rows) > 1:
-            return _choices(commands, text, rows, '有多个相同时间的观看记录，请选择要继续看的一项。')
+            noun = {'all': '影视', 'movie': '电影', 'tvshow': '电视剧'}[kind]
+            return commands._outcome(text, '没有找到最近观看的' + noun + '记录，请先指定片名。' if complete else
+                                     '部分观看记录查询失败，暂不能确定最近观看的影视，请稍后重试或指定片名。')
+        if len(rows) > 1 or not complete:
+            return _choices(commands, text, rows, '有多个相同时间的观看记录，请选择要继续看的一项。' if complete else
+                            '部分来源的观看记录查询失败，请确认要继续看的一项。')
         chosen = rows[0]
-        if kind == 'tvshow':
+        if chosen['kind'] == 'tvshow':
             return tvshow(commands, text, chosen, cancelled, progress)
+        if chosen['kind'] == 'emby' and chosen['media_type'] == 'tvshow':
+            return commands.media_actions.play_emby(text, chosen, cancelled, progress)
         if not _resumable(chosen):
             total = (chosen.get('resume') or {}).get('total', 0)
             if chosen.get('playcount', 0) or total > 0 and chosen['resume'].get('position', 0) >= total:
                 return _choices(commands, text, rows, '最近观看的《' + chosen['title'] + '》已看完；如需从头重播，请选择。')
-            outcome = commands._play(text, chosen, True, cancelled, progress)
-            if outcome['tools'][-1]['ok']:
+            outcome = (commands.media_actions.play_emby(text, chosen, cancelled, progress) if chosen['kind'] == 'emby' else
+                       commands._play(text, chosen, True, cancelled, progress))
+            if outcome.get('tools') and outcome['tools'][-1]['ok']:
                 return commands._outcome(text, '最近观看的《' + chosen['title'] + '》未保存断点，将从头播放。', trace=outcome['tools'])
             return outcome
-        return commands._play(text, chosen, True, cancelled, progress)
+        return (commands.media_actions.play_emby(text, chosen, cancelled, progress) if chosen['kind'] == 'emby' else
+                commands._play(text, chosen, True, cancelled, progress))
     except (ValueError, OSError, RuntimeError) as error:
         # Recognized continuation failures stay local, so a failed playback write
         # cannot be retried by the model with a guessed title or channel.

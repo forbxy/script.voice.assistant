@@ -66,4 +66,4 @@ def test_capture_releases_recording_state(previous, outcome, tmp_path, monkeypat
     if outcome != 'cancelled':
         assert observed[0] == 'recognizing'
     if outcome == 'no_text':
-        assert notifications == [{'sound': False}]
+        assert notifications == [{'icon': app.NOTIFICATION_ICON, 'sound': False}]

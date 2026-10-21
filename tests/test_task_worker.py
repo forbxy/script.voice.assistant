@@ -46,6 +46,24 @@ def test_cancellation_at_round_boundary_does_not_need_ui_acknowledgement():
         worker.cancel();worker.join()
 
 
+def test_followup_question_does_not_inherit_control_completion_from_previous_round():
+    trace = [{'name': 'set_mute', 'arguments': {'muted': True}, 'ok': True}]
+    def run(text, **kwargs):
+        return {'reply': '已静音' if text == '任务' else '问题的答案', 'tools': trace if text == '任务' else []}
+    worker = task(run, multi=True)
+    worker.start()
+    try:
+        assert worker.round_ready.wait(2)
+        assert worker.outcome['round_tools'] == trace
+        worker.advance('补充问题')
+        assert worker.round_ready.wait(2)
+        assert worker.outcome['tools'] == trace and worker.outcome['round_tools'] == []
+        worker.advance(None)
+        assert worker.done.wait(2)
+    finally:
+        worker.cancel();worker.join()
+
+
 def test_worker_exception_is_terminal_and_preserves_the_error():
     def failed(*args,**kwargs):
         raise RuntimeError('expected failure')

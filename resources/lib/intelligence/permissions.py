@@ -32,8 +32,9 @@ class Permissions:
         return 'danger-full-access' if self.strategy == 'full_access' else 'workspace-write'
 
     def allows(self, name):
-        if name in ('system_action', 'upload_logs'):
-            return self.native
+        # Fixed local-command capabilities, including power and log upload,
+        # are available in tier one for both local commands and AI tools.
+        # Arbitrary native commands/files still require tier three.
         if name in ('set_setting', 'set_assistant_setting', 'library_maintenance'):
             return self.level in ('settings', 'full')
         return True

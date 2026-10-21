@@ -8,6 +8,8 @@ from resources.lib.settings import FIELDS, Settings
 from resources.lib.agent_tools import KodiTools
 from resources.lib.codex_agent import launch_command
 from resources.lib.intelligence.permissions import Permissions, restricted_catalog
+from resources.lib.intelligence.command_rules import common_request
+from resources.lib.intelligence.runtime import create_tools
 from resources.lib.intelligence.sessions import Sessions
 from resources.lib.intelligence.presentation import parse
 from test_codex_agent import make_agent, finished
@@ -57,11 +59,43 @@ def test_approval_cannot_raise_permission_level(strategy):
     for level in ('media', 'settings'):
         p = Permissions(level, strategy)
         tools = KodiTools(lambda *args: calls.append(args), permissions=p)
-        assert not tools.execute('system_action', {'action': 'reboot'})['ok']
+        names = {tool['function']['name'] for tool in tools.definitions()}
+        assert {'system_action', 'upload_logs'} <= names
         if level == 'media':
-            assert not tools.execute('set_setting', {'setting': 'x', 'json_value': '1'})['ok']
+            for name, arguments in (
+                    ('set_setting', {'setting': 'x', 'json_value': '1'}),
+                    ('set_assistant_setting', {'setting': 'threshold', 'json_value': '250'}),
+                    ('library_maintenance', {'action': 'scan'})):
+                assert not p.allows(name)
+                assert not tools.execute(name, arguments)['ok']
         assert p.sandbox == 'read-only' and not p.native
     assert not calls
+
+
+@pytest.mark.parametrize('backend,strategy', [
+    ('off', 'request'), ('off', 'full_access'),
+    ('codex', 'request'), ('codex', 'auto_review'), ('codex', 'full_access'),
+    ('codebuddy', 'request'), ('codebuddy', 'full_access'),
+])
+def test_tier_one_exposes_all_local_capabilities_to_each_backend(backend, strategy):
+    def forbidden(*args):
+        pytest.fail('Checking capability registration must not execute a command')
+    tools = create_tools(None, {'agent_backend': backend, 'permission_level': 'media',
+        'approval_strategy': strategy, 'codebuddy_approval_strategy': strategy}, forbidden,
+        assistant_get=forbidden, assistant_set=forbidden)
+    tools._juku_available = tools._emby_available = True
+    names = {row['function']['name'] for row in tools.definitions()}
+    for phrase in ('上传日志', '关机', '重启', '睡眠', '重启到安卓', '暂停', '继续播放',
+                   '停止播放', '下一首', '上一首', '静音', '取消静音', '打开字幕',
+                   '关闭字幕', '返回主页', '打开设置', '音量30', '快进三十秒', '打开筛选'):
+        request = common_request(phrase)
+        assert request.get('tool') in names or 'continue_kind' in request
+    # Media resolution and installed-add-on discovery use these helpers too.
+    assert {'search_media', 'play_media', 'get_tvshow_progress', 'search_channels',
+            'search_addons', 'open_addon', 'search_emby', 'play_emby',
+            'search_juku', 'play_juku'} <= names
+    assert not {'set_setting', 'set_assistant_setting', 'library_maintenance'} & names
+    assert not tools.permissions.native and tools.permissions.sandbox == 'read-only'
 
 
 def test_restricted_catalog_removes_native_file_and_command_tools(tmp_path):

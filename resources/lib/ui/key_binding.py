@@ -5,6 +5,7 @@ import time
 import xbmc
 import xbmcgui
 import xbmcvfs
+from . import NOTIFICATION_ICON
 from ..voice_binding import bind, button_code, begin_binding, update_binding, remove_binding
 
 
@@ -60,14 +61,15 @@ def _show(addon, profile, identifier):
     code = record_key(xbmcvfs.translatePath(addon.getAddonInfo('path')))
     if code is None:
         update_binding(profile, identifier, 'cancelled')
-        xbmcgui.Dialog().notification('绑定语音按键', '未收到按键，未修改绑定。', sound=False)
+        xbmcgui.Dialog().notification('绑定语音按键', '未收到按键，未修改绑定。', icon=NOTIFICATION_ICON, sound=False)
         return
     target = bind(xbmcvfs.translatePath('special://userdata/keymaps/'), code)
     update_binding(profile, identifier, 'done', key=code, target=target.name)
     # Match controller.switcher's reload delay after the capture dialog closes.
     if not xbmc.Monitor().waitForAbort(.4):
         xbmc.executebuiltin('Action(ReloadKeymaps)')
-        xbmcgui.Dialog().notification('语音按键已绑定', '{} · global · 按键 {}'.format(target.name, code), time=5000, sound=False)
+        xbmcgui.Dialog().notification('语音按键已绑定', '{} · global · 按键 {}'.format(target.name, code),
+                                     icon=NOTIFICATION_ICON, time=5000, sound=False)
 
 
 def remove(addon):
@@ -75,4 +77,4 @@ def remove(addon):
     paths = remove_binding(profile)
     xbmc.executebuiltin('Action(ReloadKeymaps)')
     xbmcgui.Dialog().notification('语音助手',
-        '语音按键绑定已移除。' if paths else '没有语音按键绑定。', sound=False)
+        '语音按键绑定已移除。' if paths else '没有语音按键绑定。', icon=NOTIFICATION_ICON, sound=False)

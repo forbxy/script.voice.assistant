@@ -35,12 +35,13 @@ def tools(level='full', confirm=lambda *args: True):
     return result
 
 
-def test_agent_off_upload_returns_the_actual_short_url_and_reuses_success(monkeypatch):
+@pytest.mark.parametrize('level', ['media', 'settings', 'full'])
+def test_agent_off_upload_returns_the_actual_short_url_and_reuses_success(monkeypatch, level):
     calls, confirmations, progress = [], [], []
     url = 'https://paste.coreelec.org/2/TEST-NOT-UPLOADED'
     monkeypatch.setattr(log_upload, 'upload', lambda **kwargs:
                         calls.append('upload') or {'uploaded': True, 'url': url})
-    target = tools(confirm=lambda title, message: confirmations.append(title) or True)
+    target = tools(level, confirm=lambda title, message: confirmations.append(title) or True)
     for phrase in ('上传日志', '提交最新日志'):
         result = Commands(target).process(phrase, progress=progress.append)
         assert result['agent_backend'] == 'local' and result['model_invocations'] == 0
@@ -50,13 +51,15 @@ def test_agent_off_upload_returns_the_actual_short_url_and_reuses_success(monkey
     assert progress and all('上传' in message for message in progress)
 
 
-@pytest.mark.parametrize('level,approved', [('media', True), ('settings', True), ('full', False)])
-def test_local_command_preserves_permission_and_confirmation_limits(monkeypatch, level, approved):
+@pytest.mark.parametrize('level', ['media', 'settings', 'full'])
+def test_local_command_preserves_confirmation_at_every_level(monkeypatch, level):
     monkeypatch.setattr(log_upload, 'upload', lambda **kwargs: pytest.fail('Unexpected upload'))
-    target = tools(level, confirm=lambda *args: approved)
+    target = tools(level, confirm=lambda *args: False)
     result = Commands(target).process('上传日志')
     assert result['model_invocations'] == 0 and not result['tools'][-1]['ok']
-    assert '已上传' not in parse(result['reply'], target)['message']
+    message = parse(result['reply'], target)['message']
+    assert '已上传' not in message
+    assert '用户取消' in message and '未提供该工具' not in message
 
 
 def test_failed_upload_remains_a_local_error_without_a_fake_url(monkeypatch):

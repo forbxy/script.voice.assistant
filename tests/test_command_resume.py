@@ -53,7 +53,9 @@ def history():
 
 
 @pytest.mark.parametrize('phrase,kind', [('继续看电影', 'movie'), ('继续看电视', 'channel'),
-    ('继续看电视剧', 'tvshow'), ('请帮我继续看电视剧。', 'tvshow'), ('接着看电影', 'movie')])
+    ('继续看电视剧', 'tvshow'), ('请帮我继续看电视剧。', 'tvshow'), ('接着看电影', 'movie'),
+    ('继续播放电影', 'movie'), ('继续播放电视剧', 'tvshow'), ('继续播放', 'all'),
+    ('继续', 'all'), ('恢复播放', 'all'), ('继续看', 'all'), ('接着看', 'all')])
 def test_whole_continuation_rules(phrase, kind):
     assert common_request(phrase) == {'continue_kind': kind}
 
@@ -92,6 +94,29 @@ def test_recent_movie_resumes_actual_offset_even_if_already_watched_before(histo
     assert calls[-1][1] == {'item': {'movieid': 1}, 'options': {'resume': True}}
     query = next(params for method, params in calls if method == 'VideoLibrary.GetMovies')
     assert query['sort'] == {'method': 'lastplayed', 'order': 'descending'}
+
+
+@pytest.mark.parametrize('phrase', ['继续播放', '继续', '恢复播放', '继续看', '接着看'])
+def test_untyped_resume_without_a_player_compares_both_media_categories(history, phrase):
+    state, calls, tools = history
+    result = Commands(tools).process(phrase)
+    assert result['model_invocations'] == 0 and result['tools'][-1]['ok']
+    assert calls[-1][1] == {'item': {'movieid': 1}, 'options': {'resume': True}}
+    assert {name for name, _ in calls} >= {'VideoLibrary.GetMovies', 'VideoLibrary.GetTVShows'}
+    state['tvshows'][0]['lastplayed'] = '2026-10-18 21:00:00'
+    result = Commands(tools).process(phrase)
+    assert result['tools'][-1]['ok']
+    assert calls[-1][1] == {'item': {'episodeid': 30}, 'options': {'resume': True}}
+
+
+@pytest.mark.parametrize('player_type', ['video', 'audio'])
+def test_untyped_resume_uses_an_active_player_before_any_history(history, player_type):
+    state, calls, tools = history
+    state['players'] = [{'playerid': 1 if player_type == 'video' else 0, 'type': player_type}]
+    result = Commands(tools).process('继续播放')
+    assert result['tools'][-1]['ok'] and result['model_invocations'] == 0
+    assert calls[-1] == ('Player.PlayPause', {'playerid': state['players'][0]['playerid'], 'play': True})
+    assert not any(method.startswith('VideoLibrary') for method, _ in calls)
 
 
 def test_finished_movie_requires_explicit_restart(history):

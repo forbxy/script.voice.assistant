@@ -37,6 +37,42 @@ def number(value):
 
 
 NUM = r'[0-9０-９零〇一二两三四五六七八九十百千]{1,8}'
+
+
+def playback_position(value):
+    """Parse an explicit elapsed time, never a bare number or wall-clock time."""
+    clock = re.fullmatch(r'([0-9]{1,4}):([0-9]{1,2})(?::([0-9]{1,2}))?', value)
+    if clock:
+        parts = [int(part) for part in clock.groups() if part is not None]
+        if parts[-1] >= 60 or len(parts) == 3 and parts[1] >= 60:
+            return None
+        seconds = parts[-1] + parts[-2] * 60 + (parts[0] * 3600 if len(parts) == 3 else 0)
+    elif value in ('半小时', '半个小时', '半分钟', '半分'):
+        seconds = 1800 if '小时' in value else 30
+    else:
+        half_hour = re.fullmatch('(?P<hours>' + NUM + r')(?:个)?半小时', value)
+        if half_hour:
+            hours = number(half_hour['hours'])
+            seconds = hours * 3600 + 1800 if hours is not None else -1
+        else:
+            match = re.fullmatch(r'(?:(?P<hours>' + NUM + r')(?:(?:个)?小时|时))?'
+                                 r'(?:(?P<minutes>' + NUM + r')(?:分钟|分))?'
+                                 r'(?:(?P<seconds>' + NUM + r')(?:秒钟|秒)|(?P<half>半))?', value)
+            if not match or not any(match.groups()):
+                return None
+            hours, minutes, seconds = (number(match[name] or '0') for name in ('hours', 'minutes', 'seconds'))
+            if None in (hours, minutes, seconds):
+                return None
+            if match['hours'] and minutes >= 60 or (match['hours'] or match['minutes']) and seconds >= 60:
+                return None
+            if match['half'] and not (match['hours'] or match['minutes']):
+                return None
+            seconds += hours * 3600 + minutes * 60
+            if match['half']:
+                seconds += 30 if match['minutes'] else 1800
+    return seconds if 0 <= seconds <= 86399 else None
+
+
 LOG_TARGET = r'(?:最新(?:的)?)?(?:(?:kodi|coreelec|ce|系统)(?:的)?)?日志(?:(?:和|及|与)配置)?'
 ADDON_ALIASES = {
     '筛选': ('plugin.video.filteredmovies', 'Filtered Movies'),
@@ -90,9 +126,10 @@ def common_request(text):
     for kind, noun in (('movie', '电影'), ('channel', '电视'), ('tvshow', '电视剧')):
         if short in ('继续看' + noun, '接着看' + noun, '继续播放' + noun):
             return {'continue_kind': kind}
+    if short in ('继续', '继续播放', '恢复播放', '继续看', '接着看'):
+        return {'continue_kind': 'all'}
     playback = {
         'pause': ('暂停', '暂停播放', '暂停一下'),
-        'play': ('继续', '继续播放', '恢复播放'),
         'stop': ('停止', '停止播放', '结束播放'),
         'next': ('下一项', '下一首'), 'previous': ('上一项', '上一首')}
     messages = {'pause': '已暂停播放。', 'play': '已发送继续播放指令。', 'stop': '已停止播放。',
@@ -138,6 +175,17 @@ def common_request(text):
         if amount is not None and 1 <= amount <= 100:
             return {'volume_delta': amount if relative['action'] in ('增加', '提高', '调高') else -amount}
         return None
+    absolute = re.fullmatch(
+        r'(?:(?:(?:把|将)?(?:当前)?(?:视频|影片|播放进度|进度|播放位置))?'
+        r'(?:(?:跳转|跳)(?:到|至)|快进到|快退到|后退到)'
+        r'|(?:把|将)?(?:播放进度|进度|播放位置)(?:调到|拖到))'
+        r'(?:第)?(?P<position>.+?)(?:处|的位置)?(?:吧)?', short)
+    if absolute:
+        seconds = playback_position(absolute['position'])
+        if seconds is None:
+            return None
+        clock = '{:02d}:{:02d}:{:02d}'.format(seconds // 3600, seconds // 60 % 60, seconds % 60)
+        return _tool('seek_playback', {'seconds': seconds, 'absolute': True}, '已请求跳转到' + clock + '。')
     seek = re.fullmatch(r'(?P<direction>快进|后退|快退)(?P<duration>.+)', short)
     if seek:
         duration = seek['duration']

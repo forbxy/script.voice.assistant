@@ -2,6 +2,7 @@
 import xbmc
 import xbmcgui
 from .service import request
+from ..ui import NOTIFICATION_ICON
 
 
 def show(profile):
@@ -9,7 +10,7 @@ def show(profile):
     state = request(profile)
     if state['job']['state'] != 'running':
         if not state['missing']:
-            dialog.notification('语音助手', '所需组件已安装。', sound=False)
+            dialog.notification('语音助手', '所需组件已安装。', icon=NOTIFICATION_ICON, sound=False)
             return
         names = '\n'.join(row['label'] for row in state['missing'])
         size = sum(row['bytes'] for row in state['missing']) / 1024 ** 2
@@ -37,4 +38,4 @@ def show(profile):
     if state['job']['state'] == 'error':
         dialog.ok('组件下载失败', state['job'].get('error', '请稍后重试。'))
     elif state['job']['state'] == 'done':
-        dialog.notification('语音助手', '组件已就绪。', sound=False)
+        dialog.notification('语音助手', '组件已就绪。', icon=NOTIFICATION_ICON, sound=False)

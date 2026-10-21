@@ -58,8 +58,9 @@ TOOLS = [
          'resume': {'type': 'boolean', 'description': '默认true；仅明确要求从头播放时为false'}}, ['kind', 'id']),
     definition('control_playback', '暂停、继续、停止或切换上一项/下一项。仅用户明确要求从头播放当前影片时使用restart。',
         {'action': string('播放操作', enum=['pause', 'play', 'stop', 'next', 'previous', 'restart'])}, ['action']),
-    definition('seek_playback', '在当前影片中快进或后退指定秒数。',
-        {'seconds': integer('正数快进、负数后退', -3600, 3600)}, ['seconds']),
+    definition('seek_playback', '调整当前媒体播放进度。默认相对快进/后退；用户要求跳到具体播放时间时设 absolute=true，seconds 为从片头起算的秒数。保持当前播放或暂停状态，超过已知片长时跳到片尾。',
+        {'seconds': integer('相对调整为-3600至3600秒；absolute=true时为0至86399秒的绝对播放时间', -3600, 86399),
+         'absolute': {'type': 'boolean', 'description': '默认false相对调整；true跳转到从片头起算的时间'}}, ['seconds']),
     definition('set_volume', '设置 Kodi 音量百分比。',
         {'volume': integer('音量，0 到 100', 0, 100)}, ['volume']),
     definition('set_mute', '设置 Kodi 静音状态。',
@@ -494,13 +495,17 @@ class KodiTools:
         self.playback_started = action in ('play', 'next', 'previous', 'restart')
         return {'action': action}
 
-    def _seek_playback(self, seconds):
+    def _seek_playback(self, seconds, absolute=False):
+        if absolute and seconds < 0 or not absolute and abs(seconds) > 3600:
+            raise ValueError('绝对播放时间须为非负数；相对快进后退不能超过3600秒。')
         playerid = self._player()
-        value = self.rpc('Player.GetProperties', {'playerid': playerid, 'properties': ['time', 'totaltime']})
+        value = self.rpc('Player.GetProperties', {'playerid': playerid, 'properties': ['time', 'totaltime', 'canseek']})
+        if value.get('canseek') is False:
+            raise ValueError('当前播放不支持跳转进度。')
         def as_seconds(clock):
             return clock['hours'] * 3600 + clock['minutes'] * 60 + clock['seconds']
         duration = as_seconds(value['totaltime'])
-        position = max(0, as_seconds(value['time']) + seconds)
+        position = max(0, seconds if absolute else as_seconds(value['time']) + seconds)
         if duration:
             position = min(position, duration)
         clock = {'hours': position // 3600, 'minutes': position // 60 % 60,

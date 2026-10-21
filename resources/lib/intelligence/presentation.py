@@ -86,5 +86,5 @@ def parse(reply, tools):
             prefix = '播放我选择的直播频道：' if media['kind'] == 'channel' else '播放我选择的这部影视：'
             choices.append(dict(media, label=media_label(media), value=prefix + media['title']))
     # Model text and scheduled maintenance cannot decide the window's lifetime.
-    # The UI verifies actual full-screen video playback after the turn instead.
+    # The UI checks actual playback or host-verified control completion instead.
     return {'message': value['message'], 'interaction': 'continue', 'choices': choices}
