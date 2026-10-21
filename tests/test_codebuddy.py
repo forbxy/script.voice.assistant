@@ -213,7 +213,7 @@ def test_cli_is_restricted_and_private_paths_and_proxy(tmp_path, monkeypatch):
 def test_component_is_optional_but_keeps_codex_for_dictation():
     selected = requirements(ROOT, {'agent_backend': 'codebuddy', 'recognition_engine': 'codex'})
     assert 'codebuddy' in selected and 'codex' in selected
-    component = catalog(str(ROOT))['components']['codebuddy']
+    component = catalog(str(ROOT), 'linux_aarch64')['components']['codebuddy']
     assert component['version'] == '2.168.2'
     asset = component['assets'][0]
     assert asset['filename'] == 'codebuddy-code-headless_Linux_arm64.tar.gz'

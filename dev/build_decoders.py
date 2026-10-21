@@ -1,4 +1,4 @@
-"""Build remote decoders for a specified CE userspace/FFmpeg ABI (NG or NO)."""
+"""Build remote decoders against the target CPU and FFmpeg ABI (CE or LE)."""
 import argparse
 import hashlib
 import json
@@ -11,9 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--compiler-prefix', required=True)
-    parser.add_argument('--arch', choices=('linux_armv7l', 'linux_aarch64'), required=True)
+    parser.add_argument('--arch', choices=('linux_armv7l', 'linux_aarch64', 'linux_x86_64'), required=True)
     parser.add_argument('--avcodec', type=int, required=True)
     parser.add_argument('--avutil', type=int, required=True)
+    parser.add_argument('--include-dir', action='append', default=[])
+    parser.add_argument('--library-dir', action='append', default=[])
     args = parser.parse_args()
     report = []
     for group, name, source, libraries in [
@@ -23,8 +25,11 @@ def main():
     ]:
         target = ROOT / 'resources/native' / args.arch / group / (name + '.so')
         target.parent.mkdir(parents=True, exist_ok=True)
-        flags = ['-shared', '-fPIC', '-O2', '-Wall', '-Wextra', '-Werror', '-mcpu=cortex-a53']
+        flags = ['-shared', '-fPIC', '-O2', '-Wall', '-Wextra', '-Werror']
+        if args.arch == 'linux_x86_64':flags += ['-march=x86-64', '-mtune=generic']
+        else:flags += ['-mcpu=cortex-a53']
         if args.arch == 'linux_armv7l': flags += ['-mfpu=neon-fp-armv8', '-mfloat-abi=hard']
+        flags += ['-I' + name for name in args.include_dir] + ['-L' + name for name in args.library_dir]
         subprocess.run([args.compiler_prefix + 'gcc', *flags, str(ROOT / 'dev/remote' / source),
             '-o', str(target), *libraries, '-lm'], check=True)
         subprocess.run([args.compiler_prefix + 'strip', str(target)], check=True)
@@ -35,7 +40,11 @@ def main():
             raise RuntimeError('Unexpected FFmpeg avcodec ABI')
         report.append({'path': str(target.relative_to(ROOT)), 'sha256': hashlib.sha256(target.read_bytes()).hexdigest(),
                        'compiler': Path(args.compiler_prefix + 'gcc').name, 'dependencies': needed})
-    (ROOT / 'resources/licenses' / ('decoders-' + args.arch + '.json')).write_text(json.dumps(report, indent=2) + '\n')
+    destination = ROOT / 'resources/licenses' / ('decoders-' + args.arch + '.json')
+    previous = json.loads(destination.read_text()) if destination.is_file() else []
+    replaced = {row['path'] for row in report}
+    report = [row for row in previous if row['path'] not in replaced] + report
+    destination.write_text(json.dumps(report, indent=2) + '\n')
 
 
 if __name__ == '__main__': main()

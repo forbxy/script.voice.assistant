@@ -73,7 +73,7 @@ def playback_position(value):
     return seconds if 0 <= seconds <= 86399 else None
 
 
-LOG_TARGET = r'(?:最新(?:的)?)?(?:(?:kodi|coreelec|ce|系统)(?:的)?)?日志(?:(?:和|及|与)配置)?'
+LOG_TARGET = r'(?:最新(?:的)?)?(?:(?:kodi|coreelec|libreelec|ce|le|系统)(?:的)?)?日志(?:(?:和|及|与)配置)?'
 ADDON_ALIASES = {
     '筛选': ('plugin.video.filteredmovies', 'Filtered Movies'),
     '筛选页': ('plugin.video.filteredmovies', 'Filtered Movies'),

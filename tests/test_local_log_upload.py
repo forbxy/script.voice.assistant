@@ -9,7 +9,7 @@ from resources.lib.intelligence.runtime import create_tools
 
 @pytest.mark.parametrize('phrase', [
     '上传日志', '提交日志', '上传最新日志', '提交最新的日志', '上传最新 Kodi 日志',
-    '请你帮我上传CoreELEC日志。', '麻烦你提交一下系统日志', '上传下CE日志',
+    '请你帮我上传CoreELEC日志。', '麻烦你提交一下系统日志', '上传下CE日志', '上传LibreELEC日志', '提交LE日志',
     '把日志上传一下', '将最新的日志提交吧', '帮我上传日志和配置', '提交日志及配置',
 ])
 def test_clear_latest_log_commands_use_the_existing_upload_tool(phrase):

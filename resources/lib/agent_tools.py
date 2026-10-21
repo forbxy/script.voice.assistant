@@ -68,8 +68,8 @@ TOOLS = [
     definition('navigate', '打开 Kodi 的指定界面。live_tv 是直播电视频道列表，tvshows 是媒体库电视剧。语音窗口中会安排到本轮结束、助手让出前台后执行。',
         {'destination': string('界面', enum=['home', 'movies', 'tvshows', 'live_tv', 'settings', 'favourites', 'fullscreen'])},
         ['destination']),
-    definition('get_system_status', '查询 CoreELEC 系统版本、运行时间、内存、存储、CPU 温度和负载。'),
-    definition('upload_logs', '仅在用户明确要求上传/提交日志时使用。调用 CE 设置同款 pastekodi，上传最新 Kodi 日志、系统日志及相关配置到 paste.coreelec.org，返回短网址。请在回复中原样显示 url；排查问题时不要自行上传，不要另用 shell 重复上传。'),
+    definition('get_system_status', '查询系统版本、运行时间、内存、存储、CPU 温度和负载。'),
+    definition('upload_logs', '仅在用户明确要求上传/提交日志时使用。调用系统自带 pastekodi，上传最新 Kodi 日志、系统日志及相关配置到当前 CE/LE 的官方日志服务，返回短网址。请在回复中原样显示 url；排查问题时不要自行上传，不要另用 shell 重复上传。'),
     definition('search_addons', '按名称或 ID 查询全部类型的已安装插件，包括输入流、PVR、依赖模块和后台服务；默认一次返回版本、作者、简介、说明及 can_open。询问插件用途时据此回答，有明确资料后不要反复搜索或读取 addon.xml。打开插件时设置 runnable_only=true，只查询可运行的脚本/视频插件；禁用项 can_open=false。query 留空可分页列出；多个匹配时请用户选择。',
         {'query': string('插件名称关键词或 ID；空字符串列出全部', maxLength=120),
          'offset': integer('分页起始位置，默认 0；后续页使用 next_offset', 0, 1000000),
@@ -87,7 +87,7 @@ TOOLS = [
     definition('set_assistant_setting', '修改语音助手的普通设置；凭据、权限和服务登录方式必须由用户在配置页调整。',
         {'setting': string('查询到的实际设置 ID', minLength=1, maxLength=120),
          'json_value': string('新值的 JSON 标量', minLength=1, maxLength=512)}, ['setting', 'json_value']),
-    definition('system_action', '请求重启 Kodi、重启 CoreELEC、重启到安卓、关机或系统挂起（睡眠/待机）。单独说重启是重启整个系统；reboot_android 使用 CE 原生内部存储启动入口，suspend 是挂起到内存。按当前审批策略处理；本轮回复后才执行。',
+    definition('system_action', '请求重启 Kodi、重启系统、重启到安卓、关机或系统挂起（睡眠/待机）。单独说重启是重启整个系统；reboot_android 需要系统提供内部存储启动入口，suspend 是挂起到内存。按当前审批策略处理；本轮回复后才执行。',
         {'action': string('维护操作', enum=['restart_kodi', 'reboot', 'reboot_android', 'shutdown', 'suspend'])}, ['action']),
 ]
 TOOLS += MEDIA_TOOLS
@@ -97,16 +97,16 @@ LABELS = {'get_kodi_status': '正在查询播放状态…', 'search_media': '正
           'get_episodes': '正在查询剧集…', 'get_tvshow_progress': '正在查询观看进度…', 'play_media': '正在打开影片…',
           'control_playback': '正在控制播放…', 'seek_playback': '正在调整播放位置…',
           'set_volume': '正在设置音量…', 'set_mute': '正在设置静音…',
-          'navigate': '正在打开界面…', 'open_addon': '正在打开插件…', 'get_system_status': '正在查询 CoreELEC 状态…',
+          'navigate': '正在打开界面…', 'open_addon': '正在打开插件…', 'get_system_status': '正在查询系统状态…',
           'upload_logs': '正在上传最新 Kodi 日志和配置…', 'search_addons': '正在查询已安装的插件…',
           'system_action': '等待确认系统操作…'}
 LABELS.update(MEDIA_LABELS)
 SYSTEM_ACTIONS = {
     'restart_kodi': ('重启 Kodi', '当前播放会中断，随后返回 Kodi。', ['restart', 'kodi']),
-    'reboot': ('重启 CoreELEC', '电视盒子将重新启动，当前播放会中断。', ['reboot']),
+    'reboot': ('重启系统', '设备将重新启动，当前播放会中断。', ['reboot']),
     'reboot_android': ('重启到安卓', '电视盒子将重启并从内部存储启动安卓，当前播放会中断。', ['reboot']),
-    'shutdown': ('关闭 CoreELEC', '电视盒子将关机，需要重新开机后才能继续使用。', ['poweroff']),
-    'suspend': ('挂起 CoreELEC', '电视盒子将进入睡眠（待机）状态，当前播放会中断。', ['suspend']),
+    'shutdown': ('关闭系统', '设备将关机，需要重新开机后才能继续使用。', ['poweroff']),
+    'suspend': ('挂起系统', '设备将进入睡眠（待机）状态，当前播放会中断。', ['suspend']),
 }
 
 
@@ -567,9 +567,9 @@ class KodiTools:
 
     def _upload_logs(self, cancelled):
         if self.log_upload_result is None:
-            if not self.confirm('上传日志', '将最新 Kodi 日志、系统日志及相关配置上传到 paste.coreelec.org，并返回可分享的短网址。'):
+            from .log_upload import upload, service_host
+            if not self.confirm('上传日志', '将最新 Kodi 日志、系统日志及相关配置上传到 ' + service_host() + '，并返回可分享的短网址。'):
                 raise ValueError('用户取消了上传日志，未执行。')
-            from .log_upload import upload
             self.log_upload_result = upload(cancelled=cancelled)
         self.acted = True
         return dict(self.log_upload_result)

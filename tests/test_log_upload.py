@@ -25,6 +25,15 @@ def test_latest_log_command_returns_official_url_without_raw_output(tmp_path, mo
     assert 'private-debug-text' not in str(result)
 
 
+def test_libreelec_uploader_uses_its_own_official_service(tmp_path, monkeypatch):
+    monkeypatch.setattr(log_upload, 'service_host', lambda: 'paste.libreelec.tv')
+    url = 'https://paste.libreelec.tv/example123'
+    command(tmp_path, monkeypatch, 'echo ' + url + '\n')
+    assert log_upload.upload()['url'] == url
+    command(tmp_path, monkeypatch, 'echo https://paste.libreelec.tv.evil.invalid/example123\n')
+    with pytest.raises(ValueError, match='有效短网址'):log_upload.upload()
+
+
 @pytest.mark.parametrize('output,exit_code', [
     ('private-log-text', 0),
     ('https://paste.coreelec.org.evil.example/abcd', 0),

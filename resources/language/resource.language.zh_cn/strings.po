@@ -125,8 +125,8 @@ msgid "AI request timeout (seconds)"
 msgstr "每次 AI 请求超时秒数"
 
 msgctxt "#30032"
-msgid "Enable CoreELEC maintenance tools"
-msgstr "启用 CoreELEC 状态和维护工具"
+msgid "Enable system maintenance tools"
+msgstr "启用系统状态和维护工具"
 
 msgctxt "#30033"
 msgid "Configure private API key"

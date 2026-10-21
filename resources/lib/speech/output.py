@@ -20,6 +20,14 @@ def alsa_device(setting):
     device = setting[5:].split('|', 1)[0]
     if not device or len(device) > 512 or any(ord(c) < 32 for c in device):
         raise ValueError('Kodi 音频输出设备无效。')
+    if device == '@' or device.startswith('@:'):
+        # Kodi's @ is an ALSA routing alias, not a PCM name. For our stereo
+        # output Kodi first uses sysdefault on DEV=0, or front on another DEV.
+        arguments = device.partition(':')[2].split(',') if ':' in device else []
+        dev = next((part[4:] for part in arguments if part.startswith('DEV=')), '0')
+        if dev == '0':
+            arguments = [part for part in arguments if part != 'DEV=0']
+        device = ('sysdefault' if dev == '0' else 'front') + (':' + ','.join(arguments) if arguments else '')
     # plug converts Matcha's 22.05 kHz mono PCM to the selected device format.
     return 'plug:{SLAVE=' + json.dumps(device, ensure_ascii=False) + '}'
 

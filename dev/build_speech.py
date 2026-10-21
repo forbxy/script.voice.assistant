@@ -1,7 +1,9 @@
 """Build only the small ASR/Matcha bridges; large upstream libraries are downloaded."""
 import hashlib
+import argparse
 import json
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 
@@ -12,6 +14,32 @@ TARGET = ROOT / 'resources/native/linux_aarch64/bridge'
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--arch', choices=('linux_aarch64', 'linux_x86_64'), default='linux_aarch64')
+    parser.add_argument('--cc', default='gcc', help='x86 C compiler command, including optional target flags')
+    parser.add_argument('--runtime-dir', type=Path)
+    parser.add_argument('--header-dir', type=Path)
+    args = parser.parse_args()
+    if args.arch == 'linux_x86_64':
+        if args.runtime_dir is None or args.header_dir is None:
+            parser.error('x86 builds require --runtime-dir and --header-dir')
+        target = ROOT / 'resources/native/linux_x86_64/bridge'
+        target.mkdir(parents=True, exist_ok=True)
+        commands = []
+        for worker in ('asr-worker', 'matcha-worker'):
+            source = ROOT / 'resources/licenses' / (worker.replace('-', '_') + '.c')
+            command = [*shlex.split(args.cc), '-O2', '-Wall', '-Wextra', '-I' + str(args.header_dir),
+                '-L' + str(args.runtime_dir), '-Wl,--allow-shlib-undefined', str(source),
+                '-lsherpa-onnx-c-api', '-o', str(target / worker)]
+            subprocess.run(command, check=True)
+            commands.append(command)
+        report = {'runtime': 'sherpa-onnx 1.13.8 (downloaded separately)', 'architecture': args.arch,
+            'commands': commands, 'header_sha256': hashlib.sha256((args.header_dir/'c-api.h').read_bytes()).hexdigest(),
+            'files': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
+                      for p in target.iterdir() if p.is_file()}}
+        (ROOT/'resources/licenses/speech-bridge-linux_x86_64.json').write_text(json.dumps(report, indent=2)+'\n')
+        print('Built x86_64 speech bridges; models and runtime stay in userdata')
+        return
     library = TARGET / 'lib'
     library.mkdir(parents=True, exist_ok=True)
     runtime = ROOT / '.cache/sensevoice/arm64-sysroot/usr/aarch64-linux-gnu/lib'

@@ -3,15 +3,19 @@ from functools import lru_cache
 import hashlib
 import json
 from pathlib import Path
+from ..native_platform import worker_architecture, launch_command
 
 
 @lru_cache(maxsize=8)
-def catalog(root):
-    return json.loads((Path(root) / 'resources/config/components.json').read_text(encoding='utf-8'))
+def catalog(root, architecture=None):
+    data = json.loads((Path(root) / 'resources/config/components.json').read_text(encoding='utf-8'))
+    selected = architecture or worker_architecture()
+    data['components'].update(data.pop('platform_components', {}).get(selected, {}))
+    return data
 
 
 def specification(root, identifier):
-    return catalog(str(root))['components'][identifier]
+    return catalog(str(root), worker_architecture())['components'][identifier]
 
 
 def display_label(identifier, spec):
@@ -74,15 +78,10 @@ def codex_binary(root, profile):
 
 
 def native_command(root, profile, worker):
-    """ARM64 child process works with either ARM32 or ARM64 Kodi Python."""
+    """Speech stays in a child process using the current CPU's runtime."""
     runtime = require(root, profile, 'onnx-runtime') / 'lib'
-    bootstrap = Path(root) / 'resources/native/linux_aarch64/bridge'
-    loader, binary = bootstrap / 'lib/ld-linux-aarch64.so.1', bootstrap / worker
-    for path in (loader, binary):
-        if not path.is_file():
-            raise ValueError('缺少语音适配程序，请安装完整插件。')
-        path.chmod(0o755)
-    return [str(loader), '--library-path', str(runtime) + ':' + str(bootstrap / 'lib'), str(binary)]
+    bootstrap = Path(root) / 'resources/native' / worker_architecture() / 'bridge'
+    return launch_command(root, bootstrap / worker, [runtime])
 
 
 def preload_delay():

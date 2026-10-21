@@ -218,6 +218,12 @@ def test_tracker_disabled_does_not_save_or_seek(tmp_path):
     assert not tracker.store.records() and not player.seeks
 
 
+def test_service_close_releases_kodi_callback_reference(tmp_path):
+    player = Player();tracker = Tracker(tmp_path, player);player.tracker = tracker
+    tracker.tick();tracker.close()
+    assert player.tracker is None and tracker.current is None
+
+
 def test_playlist_race_preserves_current_episode_and_other_series_is_not_saved(tmp_path):
     player = Player();player.params = params(1)
     player.tag = SimpleNamespace(getMediaType=lambda: 'episode', getTitle=lambda: '第一集',

@@ -77,7 +77,9 @@ def main():
     COMPONENTS['codex'] = json.loads((ROOT / 'dev/codex_component.json').read_text())
     COMPONENTS['codebuddy'] = json.loads((ROOT / 'dev/codebuddy_component.json').read_text())
     target = ROOT / 'resources/config/components.json'
-    target.write_text(json.dumps({'schema': 1, 'components': COMPONENTS, 'asr_models': MODELS}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    platforms = json.loads((ROOT/'dev/components-linux_x86_64.json').read_text())
+    target.write_text(json.dumps({'schema': 1, 'components': COMPONENTS, 'asr_models': MODELS,
+        'platform_components': {'linux_x86_64': platforms}}, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print('Pinned', len(COMPONENTS), 'components and', len(MODELS), 'ASR configurations')
 
 

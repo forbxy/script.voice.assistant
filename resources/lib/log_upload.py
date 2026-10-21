@@ -1,4 +1,4 @@
-"""Use the same latest-log uploader as CoreELEC Settings -> Submit Log."""
+"""Use the installed CE/LE log uploader and validate its official response."""
 import os
 from pathlib import Path
 import re
@@ -11,16 +11,24 @@ COMMAND = '/usr/bin/pastekodi'
 MAX_OUTPUT = 64 * 1024
 
 
+def service_host():
+    try:
+        release = dict(line.split('=', 1) for line in Path('/etc/os-release').read_text().splitlines() if '=' in line)
+    except OSError:
+        release = {}
+    return 'paste.libreelec.tv' if release.get('ID', '').strip('"\'') == 'libreelec' else 'paste.coreelec.org'
+
+
 def upload(cancelled=lambda: False, timeout=90):
     if cancelled():
         raise InterruptedError('已取消上传日志。')
     if not Path(COMMAND).is_file() or not os.access(COMMAND, os.X_OK):
-        raise ValueError('当前系统没有 CoreELEC 日志上传程序 pastekodi。')
+        raise ValueError('当前系统没有日志上传程序 pastekodi。')
     try:
         process = subprocess.Popen([COMMAND], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                    stderr=subprocess.DEVNULL, start_new_session=True)
     except OSError:
-        raise ValueError('无法启动 CoreELEC 日志上传程序。') from None
+        raise ValueError('无法启动系统日志上传程序。') from None
     output = bytearray()
     deadline = time.monotonic() + timeout
     try:
@@ -51,9 +59,9 @@ def upload(cancelled=lambda: False, timeout=90):
             raise ValueError('日志上传失败，未取得短网址，请检查网络后重试。')
         for word in output.decode('utf-8', errors='replace').split():
             # The official service also returns versioned paths, e.g. /2/rkwl.
-            if re.fullmatch(r'https?://paste\.coreelec\.org/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*', word):
+            if re.fullmatch(r'https?://' + re.escape(service_host()) + r'/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*', word):
                 return {'uploaded': True, 'url': word,
-                        'scope': '最新 Kodi 日志、系统日志及相关 CE 配置（与 CE 设置提交日志一致）'}
+                        'scope': '最新 Kodi 日志、系统日志及相关系统配置（使用系统自带日志提交程序）'}
         # Never echo failed upload output: it may contain local log text.
         raise ValueError('日志服务没有返回有效短网址，不能确认上传成功。')
     finally:

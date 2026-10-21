@@ -33,10 +33,9 @@ def environment(profile, proxy='', region='external'):
 def command(root, profile, model='', native=False, resume='', binary=None):
     if binary is None:
         from .dependencies.catalog import require
+        from .native_platform import launch_command
         binary = require(root, profile, 'codebuddy') / 'codebuddy-headless'
-        bridge = Path(root) / 'resources/native/linux_aarch64/bridge/lib'
-        (bridge / 'ld-linux-aarch64.so.1').chmod(0o755)
-        launcher = [str(bridge / 'ld-linux-aarch64.so.1'), '--library-path', str(bridge), str(binary)]
+        launcher = launch_command(root, binary)
     else:
         launcher = [str(binary)]
     Path(binary).chmod(0o755)

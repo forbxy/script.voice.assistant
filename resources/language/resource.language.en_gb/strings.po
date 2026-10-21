@@ -125,7 +125,7 @@ msgid "AI request timeout (seconds)"
 msgstr ""
 
 msgctxt "#30032"
-msgid "Enable CoreELEC maintenance tools"
+msgid "Enable system maintenance tools"
 msgstr ""
 
 msgctxt "#30033"

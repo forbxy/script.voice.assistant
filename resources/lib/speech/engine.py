@@ -1,4 +1,4 @@
-"""A single resident ARM64 worker; Kodi's ARM32 interpreter never loads ONNX."""
+"""A resident native worker; Kodi Python never loads ONNX into its process."""
 from ..data_paths import data_path
 import hashlib
 import os

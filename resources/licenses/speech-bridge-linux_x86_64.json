@@ -1,0 +1,43 @@
+{
+  "runtime": "sherpa-onnx 1.13.8 (downloaded separately)",
+  "architecture": "linux_x86_64",
+  "commands": [
+    [
+      ".cache/codex-ce-build/zig/zig",
+      "cc",
+      "-target",
+      "x86_64-linux-gnu.2.27",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-I/home/bxy/develop/script.voice.assistant/.cache/le-x86_64",
+      "-L/home/bxy/develop/script.voice.assistant/.cache/le-x86_64/sherpa/sherpa-onnx-v1.13.8-linux-x64-shared-lib/lib",
+      "-Wl,--allow-shlib-undefined",
+      "/home/bxy/develop/script.voice.assistant/resources/licenses/asr_worker.c",
+      "-lsherpa-onnx-c-api",
+      "-o",
+      "/home/bxy/develop/script.voice.assistant/resources/native/linux_x86_64/bridge/asr-worker"
+    ],
+    [
+      ".cache/codex-ce-build/zig/zig",
+      "cc",
+      "-target",
+      "x86_64-linux-gnu.2.27",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-I/home/bxy/develop/script.voice.assistant/.cache/le-x86_64",
+      "-L/home/bxy/develop/script.voice.assistant/.cache/le-x86_64/sherpa/sherpa-onnx-v1.13.8-linux-x64-shared-lib/lib",
+      "-Wl,--allow-shlib-undefined",
+      "/home/bxy/develop/script.voice.assistant/resources/licenses/matcha_worker.c",
+      "-lsherpa-onnx-c-api",
+      "-o",
+      "/home/bxy/develop/script.voice.assistant/resources/native/linux_x86_64/bridge/matcha-worker"
+    ]
+  ],
+  "header_sha256": "2a1b95084be8fd1deb3228fcad2fd3f7f0258b64582f7402281ec174c7b7f4ce",
+  "files": {
+    "resources/native/linux_x86_64/bridge/matcha-worker": "a0111b7057e4bdd6193fd77f20f52da3d9fb6c3dcf3bf4c491f0f33230a542ae",
+    "resources/native/linux_x86_64/bridge/asr-worker": "e02de529e81c1025cf52f56f2e496df5569b00153bc7b36f7622b0f39e5b8c08"
+  }
+}

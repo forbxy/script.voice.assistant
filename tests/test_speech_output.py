@@ -21,6 +21,16 @@ def test_selected_device_and_no_silent_default_fallback():
         with pytest.raises(ValueError): alsa_device(value)
 
 
+@pytest.mark.parametrize('setting,pcm', [
+    ('ALSA:@|Default (Generic)', 'sysdefault'),
+    ('ALSA:@:CARD=Generic,DEV=0|Generic', 'sysdefault:CARD=Generic'),
+    ('ALSA:@:CARD=USB,DEV=2|USB', 'front:CARD=USB,DEV=2'),
+    ('ALSA:@:CARD=USB', 'sysdefault:CARD=USB'),
+])
+def test_kodi_stereo_alias_keeps_selected_card_and_nonzero_device(setting, pcm):
+    assert alsa_device(setting) == 'plug:{SLAVE="' + pcm + '"}'
+
+
 def test_direct_pcm_honors_volume_and_mute():
     data = struct.pack('<4h', -32768, -1000, 1000, 32767)
     assert scale_pcm(data, 1) == data

@@ -59,7 +59,7 @@ def test_pinned_catalog_has_six_variants_and_downloads_only_enabled_modules():
     values = {'recognition_engine': 'onnx', 'onnx_model': 'nano-ctc', 'agent_backend': 'codex', 'tts_enabled': 'on'}
     assert api.requirements(ROOT, values) == ['onnx-runtime', 'asr-nano-ctc', 'codex', 'matcha-bilingual']
     assert api.requirements(ROOT, {'recognition_engine': 'codex'}) == ['codex']
-    assert data['components']['codex']['version'] == '0.163.0-ce.1'
+    assert data['components']['codex']['version'] in ('0.163.0-ce.1', '0.163.0')
     for spec in data['components'].values():
         for row in spec['assets']:
             assert row['url'].startswith(('https://github.com/', 'https://acc-1258344699.cos.accelerate.myqcloud.com/@tencent-ai/codebuddy-code/releases/'))
@@ -68,7 +68,7 @@ def test_pinned_catalog_has_six_variants_and_downloads_only_enabled_modules():
 
 
 def test_codex_ce_catalog_keeps_the_release_pin_and_required_companions():
-    spec = api.catalog(str(ROOT))['components']['codex']
+    spec = api.catalog(str(ROOT), 'linux_aarch64')['components']['codex']
     pinned = json.loads((ROOT / 'tests/fixtures/codex_component.json').read_text())
     provenance = json.loads((ROOT / 'resources/licenses/codex-build.json').read_text())
     required = {'codex-app-server', 'codex-code-mode-host', 'codex-resources/bwrap'}

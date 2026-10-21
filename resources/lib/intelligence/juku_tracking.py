@@ -99,6 +99,10 @@ class Tracker:
     def close(self):
         self._save()
         self.current, self.file = None, None
+        # Release the Kodi callback before its Python subinterpreter exits.
+        # Player -> Tracker -> Player would otherwise retain a SWIG director.
+        if getattr(self.player, 'tracker', None) is self:
+            self.player.tracker = None
 
 
 def create(profile):

@@ -1,0 +1,109 @@
+{
+  "onnx-runtime": {
+    "version": "1.13.8",
+    "label": "sherpa-onnx 语音运行库",
+    "assets": [
+      {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-linux-x64-shared-lib.tar.bz2",
+        "filename": "sherpa-onnx-v1.13.8-linux-x64-shared-lib.tar.bz2",
+        "format": "tar",
+        "sha256": "3892d184be41027e18165e67f549cd4e4cdd8dcd73ac5579e97afd55e14e30b6",
+        "md5": "04c18a95a9536ac2052bcd1594ff1c04",
+        "bytes": 9816899,
+        "expanded_bytes": 32150801,
+        "files": {
+          "sherpa-onnx-v1.13.8-linux-x64-shared-lib/lib/libonnxruntime.so": "lib/libonnxruntime.so",
+          "sherpa-onnx-v1.13.8-linux-x64-shared-lib/lib/libsherpa-onnx-c-api.so": "lib/libsherpa-onnx-c-api.so"
+        }
+      }
+    ],
+    "required": [
+      "lib/libonnxruntime.so",
+      "lib/libsherpa-onnx-c-api.so"
+    ]
+  },
+  "codex": {
+    "version": "0.163.0",
+    "label": "Codex 0.163.0",
+    "assets": [
+      {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-app-server-x86_64-unknown-linux-musl.tar.gz",
+        "filename": "codex-app-server-x86_64-unknown-linux-musl.tar.gz",
+        "format": "tar",
+        "sha256": "bd587a5419f9b6fa488e4950b065c9127f7db0989388210a3785294b460cdf09",
+        "md5": "3e06ee6e8b736ddd9c797461cb8ea60a",
+        "bytes": 87120300,
+        "expanded_bytes": 228736728,
+        "files": {
+          "codex-app-server-x86_64-unknown-linux-musl": "codex-app-server"
+        },
+        "executables": [
+          "codex-app-server"
+        ]
+      },
+      {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
+        "filename": "codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
+        "format": "tar",
+        "sha256": "314263128ba6592e7e807c265deeaf928a692b72dcbfeb5e0b20c9423b703529",
+        "md5": "3e545131d8e551b764d1bb506bc27ae5",
+        "bytes": 27583103,
+        "expanded_bytes": 74277776,
+        "files": {
+          "codex-code-mode-host-x86_64-unknown-linux-musl": "codex-code-mode-host"
+        },
+        "executables": [
+          "codex-code-mode-host"
+        ]
+      },
+      {
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/bwrap-x86_64-unknown-linux-musl.tar.gz",
+        "filename": "bwrap-x86_64-unknown-linux-musl.tar.gz",
+        "format": "tar",
+        "sha256": "bcc196b1d25dc2c2b912dcedf780b562deb0552f3c50648761ced145c3466a23",
+        "md5": "8239b42635e66892ba27ca0519a56abc",
+        "bytes": 261563,
+        "expanded_bytes": 529776,
+        "files": {
+          "bwrap-x86_64-unknown-linux-musl": "codex-resources/bwrap"
+        },
+        "executables": [
+          "codex-resources/bwrap"
+        ]
+      }
+    ],
+    "required": [
+      "codex-app-server",
+      "codex-code-mode-host",
+      "codex-resources/bwrap"
+    ]
+  },
+  "codebuddy": {
+    "version": "2.168.2",
+    "label": "CodeBuddy 国际版 2.168.2",
+    "assets": [
+      {
+        "url": "https://acc-1258344699.cos.accelerate.myqcloud.com/@tencent-ai/codebuddy-code/releases/download/2.168.2/codebuddy-code-headless_Linux_x86_64.tar.gz",
+        "filename": "codebuddy-code-headless_Linux_x86_64.tar.gz",
+        "format": "tar",
+        "sha256": "cfb5e3ff834c3dc392351169f53bf121c61c03a4e164e563696b3c60b2397f3c",
+        "md5": "1fcbc6b43ddabb93690df01854a01853",
+        "bytes": 60384804,
+        "expanded_bytes": 150639456,
+        "files": {
+          "CHANGELOG.md": "CHANGELOG.md",
+          "LICENSE.txt": "LICENSE.txt",
+          "README.md": "README.md",
+          "codebuddy-headless": "codebuddy-headless"
+        },
+        "executables": [
+          "codebuddy-headless"
+        ]
+      }
+    ],
+    "required": [
+      "codebuddy-headless",
+      "LICENSE.txt"
+    ]
+  }
+}
