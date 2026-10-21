@@ -1,4 +1,4 @@
-"""Continue the matching player or the latest verified Kodi/Emby viewing history."""
+"""Continue the matching player or the latest verified Kodi/Emby/Juku viewing history."""
 
 
 def _resumable(row):
@@ -13,6 +13,9 @@ def _choices(commands, text, rows, message, resume=True):
         # Only verified remembered metadata, never a selection's untrusted flag,
         # decides whether the subsequent click resumes rather than restarts.
         row['_command_resume'] = resume
+        if row['kind'] in ('juku', 'emby'):
+            request = '_' + row['kind'] + '_request'
+            row[request] = dict(row[request], resume=resume)
         label = row['title']
         if row.get('showtitle'):
             label = '{} 第{}季第{}集：{}'.format(row['showtitle'], row.get('season', 0), row.get('episode', 0), label)
@@ -118,20 +121,30 @@ def resume(commands, text, kind, cancelled, progress):
             return tvshow(commands, text, chosen, cancelled, progress)
         if chosen['kind'] == 'emby' and chosen['media_type'] == 'tvshow':
             return commands.media_actions.play_emby(text, chosen, cancelled, progress)
+        if chosen['kind'] == 'juku' and chosen.get('media_type') == 'episode':
+            from .juku import Client
+            return commands.media_actions.play_juku(text, chosen, Client(cancelled), cancelled, progress)
         if not _resumable(chosen):
             total = (chosen.get('resume') or {}).get('total', 0)
             if chosen.get('playcount', 0) or total > 0 and chosen['resume'].get('position', 0) >= total:
-                return _choices(commands, text, rows, '最近观看的《' + chosen['title'] + '》已看完；如需从头重播，请选择。')
-            outcome = (commands.media_actions.play_emby(text, chosen, cancelled, progress) if chosen['kind'] == 'emby' else
-                       commands._play(text, chosen, True, cancelled, progress))
+                return _choices(commands, text, rows, '最近观看的《' + chosen['title'] + '》已看完；如需从头重播，请选择。', resume=False)
+            outcome = _play_recent(commands, text, chosen, cancelled, progress)
             if outcome.get('tools') and outcome['tools'][-1]['ok']:
                 return commands._outcome(text, '最近观看的《' + chosen['title'] + '》未保存断点，将从头播放。', trace=outcome['tools'])
             return outcome
-        return (commands.media_actions.play_emby(text, chosen, cancelled, progress) if chosen['kind'] == 'emby' else
-                commands._play(text, chosen, True, cancelled, progress))
+        return _play_recent(commands, text, chosen, cancelled, progress)
     except (ValueError, OSError, RuntimeError) as error:
         # Recognized continuation failures stay local, so a failed playback write
         # cannot be retried by the model with a guessed title or channel.
         if isinstance(error, InterruptedError):
             raise
         return commands._outcome(text, '未能继续播放：' + str(error))
+
+
+def _play_recent(commands, text, item, cancelled, progress):
+    if item['kind'] == 'emby':
+        return commands.media_actions.play_emby(text, item, cancelled, progress)
+    if item['kind'] == 'juku':
+        from .juku import Client
+        return commands.media_actions.play_juku(text, item, Client(cancelled), cancelled, progress)
+    return commands._play(text, item, True, cancelled, progress)

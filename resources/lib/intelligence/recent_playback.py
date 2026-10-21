@@ -1,4 +1,4 @@
-"""Compare bounded Kodi/Emby viewing history without building a title catalogue."""
+"""Compare bounded Kodi/Emby/Juku viewing history without building a title catalogue."""
 from datetime import datetime
 import time
 
@@ -81,6 +81,20 @@ def latest(tools, kind, cancelled, progress):
                 complete = False
     if cancelled():
         raise InterruptedError('已取消查询观看记录。')
+    from . import juku
+    if tools.media_search_juku and tools._juku_available is None:
+        tools._juku_available = juku.available(tools)
+    if tools.media_search_juku and tools._juku_available:
+        from .juku_resume import collect
+        progress('正在查询巨库最近观看记录…')
+        try:
+            values, done = collect(tools, kind, cancelled)
+            complete = complete and done
+            records.extend((row['updated_at'], 'juku', row['media_type'], row) for row in values)
+        except InterruptedError:
+            raise
+        except (ValueError, OSError, RuntimeError):
+            complete = False
     if not records:
         return [], complete
     newest = max(row[0] for row in records)
@@ -91,6 +105,10 @@ def latest(tools, kind, cancelled, progress):
             raise InterruptedError('已取消查询观看记录。')
         if source == 'local':
             rows.extend(tools._remember([row], category))
+            continue
+        if source == 'juku':
+            from .juku_resume import remember
+            rows.append(remember(tools, row))
             continue
         client = clients[row['_emby_account']]
         value = row.pop('_recent_value')

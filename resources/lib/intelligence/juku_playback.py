@@ -124,6 +124,20 @@ def share_route(client, params, resume):
 
 def open_item(tools, item, client, cancelled, progress):
     """Only this shared path validates a result and schedules its Juku route."""
+    if item.get('_juku_history'):
+        from .juku_resume import open_item as resume_item
+        return resume_item(tools, item, client, cancelled, progress)
+    if tools.profile is not None and item['_juku_source'] == 'online' and item['_juku_request']['resume']:
+        from .juku_history import Store
+        matches = [row for row in Store(tools.profile).records().values()
+                   if row.get('source') == 'online' and row.get('catalogue_id') == item['_juku_id']
+                   and row.get('title') == item['title'] and not row.get('played')
+                   and (item['_juku_request'].get('season') is None or
+                        row.get('season') == item['_juku_request']['season'])]
+        if matches:
+            from .juku_resume import open_item as resume_item
+            record = max(matches, key=lambda row: row['updated_at'])
+            return resume_item(tools, dict(item, _juku_history=record['key']), client, cancelled, progress)
     from .command_request import normalize
     # Re-read authoritative metadata after a persisted choice or before autoplay.
     if item['_juku_source'] == 'private':

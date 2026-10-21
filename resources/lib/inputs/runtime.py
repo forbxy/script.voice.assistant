@@ -54,6 +54,7 @@ def main():
         speech = None
         asr = None
         dependencies = None
+        juku_tracker = None
         stopfile = data_path(profile, 'cmcc-stop.flag')
         stopfile.unlink(missing_ok=True)
         try:
@@ -104,9 +105,13 @@ def main():
             home.setProperty('VoiceAssistant.CMCCServiceVersion', addon.getAddonInfo('version'))
             last_check = -1
             settings = Settings(addon).values()
+            from ..intelligence.juku_tracking import create as create_juku_tracker
+            juku_tracker = create_juku_tracker(profile)
             previous_settings = dict(settings)
             prompt_dependencies = False
-            while not monitor.abortRequested() and not stopfile.exists():
+            # Kodi dispatches Player/Monitor callbacks from waitForAbort; plain
+            # socket polling and abortRequested() do not drain that queue.
+            while not monitor.waitForAbort(.001) and not stopfile.exists():
                 now = time.monotonic()
                 if resident:
                     resident.tick(settings)
@@ -154,6 +159,10 @@ def main():
                     if not settings_open():
                         settings = Settings(addon).values()
                     dependencies.update(settings)
+                    try:
+                        juku_tracker.tick(settings.get('media_search_juku', 'on') == 'on')
+                    except (OSError, ValueError, RuntimeError):
+                        xbmc.log('[voice-juku] 无法保存本地播放进度。', xbmc.LOGWARNING)
                     if settings != previous_settings:
                         prompt_dependencies = not dependencies.web_saved
                         previous_settings = dict(settings)
@@ -191,6 +200,9 @@ def main():
         except Exception as error:
             xbmc.log('[voice-service] ' + str(error), xbmc.LOGERROR)
         finally:
+            if juku_tracker:
+                try:juku_tracker.close()
+                except (OSError, ValueError):pass
             if monitor.library_changes is not None:
                 try:
                     monitor.library_changes.close()

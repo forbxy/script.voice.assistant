@@ -68,6 +68,8 @@ def build():
                   'resources/lib/ui/task_requests.py',
                   'resources/lib/ui/task_playback.py',
                   'resources/lib/intelligence/juku.py', 'resources/lib/intelligence/juku_playback.py',
+                  'resources/lib/intelligence/juku_history.py', 'resources/lib/intelligence/juku_tracking.py',
+                  'resources/lib/intelligence/juku_resume.py',
                   'resources/lib/intelligence/juku_tools.py',
                   'resources/lib/intelligence/emby.py', 'resources/lib/intelligence/emby_client.py',
                   'resources/lib/intelligence/emby_cache.py',

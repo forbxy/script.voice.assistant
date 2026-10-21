@@ -126,7 +126,7 @@ def test_finished_movie_requires_explicit_restart(history):
     parsed = parse(result['reply'], tools)
     assert '已看完' in parsed['message'] and not tools.acted
     Commands(tools).process('选择', parsed['choices'][0])
-    assert calls[-1][1] == {'item': {'movieid': 1}, 'options': {'resume': True}}
+    assert calls[-1][1] == {'item': {'movieid': 1}, 'options': {'resume': False}}
 
 
 def test_missing_offset_is_explained_and_write_errors_are_not_retried(history):
