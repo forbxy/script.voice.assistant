@@ -321,6 +321,26 @@ def pumped_request(server, path, body, token=None):
         return json.loads(future.result())
 
 
+def test_component_health_checks_are_throttled_without_delaying_queued_requests(configuration, monkeypatch):
+    from resources.lib.configuration import server as module
+    from resources.lib.dependencies import catalog
+    clock, checks = [10], []
+    monkeypatch.setattr(module.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(catalog, 'installed', lambda root, profile, name: checks.append(name) or False)
+    server = configuration
+    for unused in range(30):
+        server.pump()
+    assert checks == ['codex', 'codebuddy']
+    # A web request must still be serviced between slow health checks.
+    event, result = threading.Event(), {}
+    server.queue.put(('activate', None, event, result))
+    server.pump()
+    assert event.is_set() and result['token'] == server.token
+    clock[0] += 1
+    server.pump()
+    assert checks == ['codex', 'codebuddy', 'codex', 'codebuddy']
+
+
 def test_media_search_switches_save_to_kodi_and_remain_independent(configuration):
     server = configuration
     state = server.state()

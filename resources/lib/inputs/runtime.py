@@ -14,6 +14,7 @@ from ..ur02_service import Ur02Controller, find_remote as find_ur02
 from ..r22_service import R22Controller, find_remote as find_r22
 from ..b25_service import B25Controller, find_remote as find_b25
 from ..settings import Settings
+from .polling import Properties, active, wait_inputs
 
 
 class LibraryMonitor(xbmc.Monitor):
@@ -36,6 +37,7 @@ class LibraryMonitor(xbmc.Monitor):
 def main():
     addon = xbmcaddon.Addon('script.voice.assistant')
     monitor, home = LibraryMonitor(), xbmcgui.Window(10000)
+    properties = Properties(home)
     root = xbmcvfs.translatePath(addon.getAddonInfo('path'))
     profile = Path(xbmcvfs.translatePath(addon.getAddonInfo('profile')))
     profile.mkdir(parents=True, exist_ok=True)
@@ -70,7 +72,7 @@ def main():
                     ('r22', 'R22', R22Controller, find_r22),
                     ('b25', 'B25', B25Controller, find_b25)):
                 controller = cls(profile, root, launch=lambda token, name=prefix:
-                    home.setProperty('VoiceAssistant.' + name + 'Session', token),
+                    properties.set(name + 'Session', token),
                     log=lambda text: xbmc.log('[voice-input] ' + text, xbmc.LOGWARNING))
                 controller.activation = 'hold' if source == 'r22' else 'tap'
                 controller.open()
@@ -109,56 +111,61 @@ def main():
             juku_tracker = create_juku_tracker(profile)
             previous_settings = dict(settings)
             prompt_dependencies = False
+            next_control = 0
+            asr.tick(settings)
+            buddy.tick(settings)
             # Kodi dispatches Player/Monitor callbacks from waitForAbort; plain
             # socket polling and abortRequested() do not drain that queue.
+            # Kodi treats zero as an infinite wait, not a nonblocking poll.
             while not monitor.waitForAbort(.001) and not stopfile.exists():
                 now = time.monotonic()
-                if resident:
+                if now >= next_control:
+                    web.pump()
+                    # The configuration owner reads Kodi settings once, and
+                    # web saves update this snapshot immediately on this thread.
+                    with web.lock:
+                        settings = dict(web.snapshot['settings'])
+                        logged_in = web.snapshot['logged_in']
+                    if web.input_changed or settings != previous_settings:
+                        last_check = -1
+                        web.input_changed = False
+                        asr.tick(settings)
+                        buddy.tick(settings)
+                    if speech:
+                        recording = (home.getProperty('VoiceAssistant.State') in ('starting','listening','recognizing')
+                            or bool(home.getProperty('VoiceAssistant.USBRecordRequested'))
+                            or any(getattr(controller.session, 'recording', False)
+                                   for source, prefix, controller, discover in adapters))
+                        try:
+                            speech.tick(settings, recording=recording)
+                            properties.set('SpeechReady', 'true' if speech.engine.ready.is_set() and speech.enabled else 'false')
+                        except Exception as error:
+                            xbmc.log('[voice-speech] 播放失败：' + type(error).__name__, xbmc.LOGWARNING)
+                            speech.close()
+                            speech = None
+                            properties.set('SpeechReady', 'false')
+                    if home.getProperty('VoiceAssistant.AccountRefreshRequested'):
+                        try:
+                            web.job('account')
+                            home.clearProperty('VoiceAssistant.AccountRefreshRequested')
+                        except ValueError:
+                            pass
+                    if home.getProperty('VoiceAssistant.ConfigureRequested'):
+                        home.clearProperty('VoiceAssistant.ConfigureRequested')
+                        token = web.activate()
+                        address = xbmc.getIPAddress()
+                        home.setProperty('VoiceAssistant.ConfigureURL',
+                            'http://{}:{}/#{}'.format(address, web.http.server_port, token))
+                        home.setProperty('VoiceAssistant.ConfigurePIN', web.pin)
+                    properties.set('CodexLoggedIn', 'true' if logged_in else 'false')
+                    busy = ((speech and speech.current is not None) or
+                            any(getattr(controller.session, 'recording', False)
+                                for source, prefix, controller, discover in adapters))
+                    next_control = now + (.02 if busy else .1)
+                if now - last_check >= 1:
                     resident.tick(settings)
-                if buddy:
-                    buddy.tick(settings)
-                web.pump()
-                if web.input_changed:
-                    settings = Settings(addon).values()
-                    last_check = -1
-                    web.input_changed = False
-                if asr:
-                    asr.tick(settings)
                     with dependencies.lock:
                         dependencies.runtime['asr'] = dict(asr.status)
-                if speech:
-                    recording = (home.getProperty('VoiceAssistant.State') in ('starting','listening','recognizing')
-                        or bool(home.getProperty('VoiceAssistant.USBRecordRequested'))
-                        or any(getattr(controller.session, 'recording', False)
-                               for source, prefix, controller, discover in adapters))
-                    try:
-                        speech.tick(settings, recording=recording)
-                        home.setProperty('VoiceAssistant.SpeechReady', 'true' if speech.engine.ready.is_set() and speech.enabled else 'false')
-                    except Exception as error:
-                        xbmc.log('[voice-speech] 播放失败：' + type(error).__name__, xbmc.LOGWARNING)
-                        speech.close()
-                        speech = None
-                        home.setProperty('VoiceAssistant.SpeechReady', 'false')
-                if home.getProperty('VoiceAssistant.AccountRefreshRequested'):
-                    try:
-                        web.job('account')
-                        home.clearProperty('VoiceAssistant.AccountRefreshRequested')
-                    except ValueError:
-                        pass
-                if home.getProperty('VoiceAssistant.ConfigureRequested'):
-                    home.clearProperty('VoiceAssistant.ConfigureRequested')
-                    token = web.activate()
-                    address = xbmc.getIPAddress()
-                    home.setProperty('VoiceAssistant.ConfigureURL',
-                        'http://{}:{}/#{}'.format(address, web.http.server_port, token))
-                    home.setProperty('VoiceAssistant.ConfigurePIN', web.pin)
-                with web.lock:
-                    logged_in = web.snapshot['logged_in']
-                home.setProperty('VoiceAssistant.CodexLoggedIn', 'true' if logged_in else 'false')
-                if now - last_check >= 1:
-                    if not settings_open():
-                        settings = Settings(addon).values()
-                    dependencies.update(settings)
                     try:
                         juku_tracker.tick(settings.get('media_search_juku', 'on') == 'on')
                     except (OSError, ValueError, RuntimeError):
@@ -190,13 +197,21 @@ def main():
                                 except (OSError, ValueError) as error:
                                     controller.error = str(error)
                     last_check = now
+                controllers = active(adapters, settings['voice_input'])
+                for controller in controllers:
+                    controller.tick(settings['max_seconds'], timeout=0)
                 for source, prefix, controller, discover in adapters:
-                    controller.tick(settings['max_seconds'], timeout=.005)
                     enabled = settings['voice_input'] == source
-                    home.setProperty('VoiceAssistant.' + prefix + 'Status', controller.status if enabled else 'disabled')
-                    home.setProperty('VoiceAssistant.' + prefix + 'Connected', 'true' if controller.hid is not None else 'false')
-                    home.setProperty('VoiceAssistant.' + prefix + 'Session',
+                    properties.set(prefix + 'Status', controller.status if enabled else 'disabled')
+                    properties.set(prefix + 'Connected', 'true' if controller.hid is not None else 'false')
+                    properties.set(prefix + 'Session',
                         controller.session.token if controller.session and controller.session.peer is None else '')
+                # A selected HID/GATT or PCM client wakes immediately. The
+                # timeout only bounds Kodi callbacks, web requests and timers.
+                timeout = min(.1, next_control - time.monotonic())
+                if any(getattr(controller.session, 'recording', False) for controller in controllers):
+                    timeout = min(timeout, .02)
+                wait_inputs(controllers, timeout)
         except Exception as error:
             xbmc.log('[voice-service] ' + str(error), xbmc.LOGERROR)
         finally:

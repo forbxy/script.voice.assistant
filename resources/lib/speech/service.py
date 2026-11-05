@@ -166,10 +166,12 @@ class Service:
 
     def work(self):
         while not self.closed.is_set():
-            self.wake.wait(.1); self.wake.clear()
+            self.wake.wait(1); self.wake.clear()
             if not self.enabled or time.monotonic() < self.retry_after: continue
-            if not all(installed(self.root, self.profile, name)
-                       for name in ('onnx-runtime', 'matcha-bilingual')):
+            process = self.engine.process
+            if ((process is None or process.poll() is not None) and
+                    not all(installed(self.root, self.profile, name)
+                            for name in ('onnx-runtime', 'matcha-bilingual'))):
                 continue
             if time.monotonic() < self.preload_at and self.current is None:
                 continue

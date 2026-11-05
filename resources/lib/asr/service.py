@@ -139,7 +139,7 @@ class Service:
 
     def work(self):
         while not self.closed.is_set():
-            self.wake.wait(.3); self.wake.clear()
+            self.wake.wait(1); self.wake.clear()
             if not self.lock.acquire(blocking=False): continue
             try:
                 model = self.selected()
@@ -147,6 +147,11 @@ class Service:
                     self.unload('model_changed')
                 if not model:
                     self.status = {'state': 'disabled'}
+                elif (self.native and self.native.process.poll() is None and
+                      self.loaded_decoding == self.decoding(model)):
+                    # A healthy resident needs no repeated receipt/file checks.
+                    # New requests/settings still wake this worker immediately.
+                    self.ready(model)
                 elif not self.available(model):
                     self.status = {'state': 'missing', 'model': model}
                 elif self.clock() < self.preload_at and not self.native and self.demand_model != model:

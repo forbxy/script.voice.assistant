@@ -224,6 +224,17 @@ class Controller:
                 self._drop_peer(peer)
                 return
 
+    def poll_descriptors(self):
+        readers = list(self.peers)
+        if self.listener is not None:
+            readers.append(self.listener)
+        if self.hid is not None:
+            readers.append(self.hid)
+        readers.extend(self.extra_readers())
+        writers = ([self.session.peer] if self.session and self.session.peer is not None and
+                   self.session.outgoing else [])
+        return readers, writers
+
     def tick(self, maximum=10, timeout=0.05):
         now = self.clock()
         current = self.session
@@ -237,14 +248,7 @@ class Controller:
         for peer, state in list(self.peers.items()):
             if not state['claimed'] and now - state['started'] >= 2:
                 self._drop_peer(peer)
-        readers = list(self.peers)
-        if self.listener is not None:
-            readers.append(self.listener)
-        if self.hid is not None:
-            readers.append(self.hid)
-        readers.extend(self.extra_readers())
-        writers = ([self.session.peer] if self.session and self.session.peer is not None and
-                   self.session.outgoing else [])
+        readers, writers = self.poll_descriptors()
         readable, writable, _ = wait(readers, writers, [], timeout)
         # HID first: drain audio/control before a peer disconnect frees its lease.
         if self.hid is not None and self.hid in readable:

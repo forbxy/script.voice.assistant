@@ -81,6 +81,7 @@ class Configuration:
         self.pin = ''
         self.pair_attempts = {}
         self.last_settings_check = 0
+        self.last_component_check = 0
         self.logout_pending = False
         self.input_changed = False
         self.snapshot = {'settings': self.settings.values(), 'schema': web_schema(), 'logged_in': False,
@@ -158,20 +159,23 @@ class Configuration:
     def pump(self):
         """Called by the Kodi service main thread; handlers never touch xbmcaddon."""
         from ..dependencies.catalog import installed
-        ready = installed(self.root, self.profile, 'codex')
-        if ready and not self.codex_ready:
-            try:
-                self.job('account')
-                self.codex_ready = True
-            except ValueError:
-                pass
-        ready = installed(self.root, self.profile, 'codebuddy')
-        if ready and not self.codebuddy_ready:
-            try:
-                self.job('codebuddy-account')
-                self.codebuddy_ready = True
-            except ValueError:
-                pass
+        now = time.monotonic()
+        if now - self.last_component_check >= 1:
+            self.last_component_check = now
+            ready = installed(self.root, self.profile, 'codex')
+            if ready and not self.codex_ready:
+                try:
+                    self.job('account')
+                    self.codex_ready = True
+                except ValueError:
+                    pass
+            ready = installed(self.root, self.profile, 'codebuddy')
+            if ready and not self.codebuddy_ready:
+                try:
+                    self.job('codebuddy-account')
+                    self.codebuddy_ready = True
+                except ValueError:
+                    pass
         if self.logout_pending:
             try:
                 with idle_operation(self.profile):

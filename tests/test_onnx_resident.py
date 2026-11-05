@@ -69,6 +69,32 @@ def test_preload_waits_one_minute_but_first_use_loads_and_reuses_model(service):
     assert owner.native.process.pid == pid
 
 
+def test_loaded_resident_does_not_revalidate_all_component_files(service, monkeypatch):
+    import threading
+    owner, clock, profile = service
+    with Recognizer(profile, 'first') as client:
+        assert client.finish() == '0'
+        pid = owner.native.process.pid
+    wait_for(lambda: owner.status['state'] == 'ready' and not owner.clients)
+    checked = []
+    monkeypatch.setattr(owner, 'available', lambda model: checked.append(model) or False)
+    refreshed = threading.Event()
+    ready = owner.ready
+    def mark_ready(model):
+        ready(model)
+        refreshed.set()
+    monkeypatch.setattr(owner, 'ready', mark_ready)
+    owner.wake.set()
+    assert refreshed.wait(2)
+    assert not checked and owner.native.process.pid == pid
+    # A native crash must still trigger the availability/reload path.
+    owner.native.process.terminate()
+    owner.native.process.wait(2)
+    owner.wake.set()
+    wait_for(lambda: owner.status['state'] == 'missing')
+    assert checked and owner.native.process.pid == pid
+
+
 @pytest.mark.parametrize('model', ['zipformer-2025', 'zipformer-2025-fp16', 'zipformer-2025-fp32'])
 def test_decoding_settings_reach_child_reload_zipformer_and_preserve_active_stream(service, model):
     owner, clock, profile = service
